@@ -1,0 +1,780 @@
+// College ERP — Prisma schema (PostgreSQL + pgvector)
+//
+// Conventions
+// - Every model has createdAt/updatedAt (append-only logs only have createdAt).
+// - People records (User, StudentProfile, FacultyProfile) are soft-deleted via deletedAt.
+// - Foreign keys and common filter columns are indexed.
+// - Times of day are stored as minutes from midnight (Int) to make clash detection simple.
+// - Calendar dates use @db.Date; instants use timestamptz.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  FACULTY
+  STUDENT
+}
+
+/// Forced first-login flow. Enforced by proxy + server checks.
+/// Faculty/admins skip CONSENT and FACE_ENROLLMENT.
+enum OnboardingStep {
+  CHANGE_PASSWORD
+  BIOMETRIC_CONSENT
+  FACE_ENROLLMENT
+  COMPLETE
+}
+
+enum Term {
+  ODD
+  EVEN
+  SUMMER
+}
+
+enum CourseType {
+  THEORY
+  LAB
+  ELECTIVE
+  PROJECT
+}
+
+enum RoomType {
+  CLASSROOM
+  LAB
+  SEMINAR_HALL
+}
+
+enum SessionType {
+  LECTURE
+  LAB
+  TUTORIAL
+}
+
+enum ClassSessionKind {
+  REGULAR
+  EXTRA
+  RESCHEDULED
+}
+
+enum ClassSessionStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+/// Lifecycle of attendance-taking for one class session.
+/// Nothing is final until a faculty member confirms (FINALIZED).
+enum AttendanceState {
+  NOT_TAKEN
+  PROCESSING
+  PENDING_REVIEW
+  FINALIZED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum AttendanceMethod {
+  FACE
+  MANUAL
+}
+
+enum FaceAngle {
+  FRONT
+  LEFT
+  RIGHT
+  UP
+  DOWN
+}
+
+enum ExamType {
+  QUIZ
+  ASSIGNMENT
+  INTERNAL
+  MIDTERM
+  PRACTICAL
+  ENDTERM
+}
+
+enum AnnouncementAudience {
+  ALL
+  ROLE
+  DEPARTMENT
+  SECTION
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum NotificationType {
+  ANNOUNCEMENT
+  LEAVE_REQUEST
+  CORRECTION_REQUEST
+  ATTENDANCE_WARNING
+  RESULT_PUBLISHED
+  SCHEDULE_CHANGE
+  SYSTEM
+}
+
+enum HolidayType {
+  PUBLIC
+  INSTITUTIONAL
+  EXAM_BREAK
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity & people
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id                  String         @id @default(cuid())
+  /// Roll number for students, employee ID for faculty, username for admins. Login identifier.
+  loginId             String         @unique
+  /// College email — also accepted as a login identifier. Stored lowercase.
+  email               String         @unique
+  name                String
+  phone               String?
+  role                Role
+  passwordHash        String
+  mustChangePassword  Boolean        @default(true)
+  passwordChangedAt   DateTime?
+  onboardingStep      OnboardingStep @default(CHANGE_PASSWORD)
+  isActive            Boolean        @default(true)
+  failedLoginAttempts Int            @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  deletedAt           DateTime?
+
+  studentProfile StudentProfile?
+  facultyProfile FacultyProfile?
+
+  faceEmbeddings      FaceEmbedding[]
+  biometricConsents   BiometricConsent[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]                    @relation("AuditActor")
+  announcements       Announcement[]
+  settingsUpdated     Setting[]
+  marksEntered        Mark[]                        @relation("MarkEnteredBy")
+  attendanceMarked    AttendanceRecord[]            @relation("AttendanceMarkedBy")
+  attendanceConfirmed AttendanceRecord[]            @relation("AttendanceConfirmedBy")
+  sessionsFinalized   ClassSession[]                @relation("SessionFinalizedBy")
+  leaveReviewed       LeaveRequest[]                @relation("LeaveReviewedBy")
+  correctionsReviewed AttendanceCorrectionRequest[] @relation("CorrectionReviewedBy")
+
+  @@index([role])
+  @@index([deletedAt])
+}
+
+model StudentProfile {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  rollNumber          String    @unique
+  programId           String
+  /// Home section (cohort). Course-level membership lives in Enrollment.
+  sectionId           String?
+  admissionYear       Int
+  currentSemesterNo   Int       @default(1)
+  dateOfBirth         DateTime? @db.Date
+  guardianName        String?
+  guardianPhone       String?
+  faceEnrolledAt      DateTime?
+  /// Set by admin/faculty to let a student redo face enrollment.
+  faceReenrollAllowed Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  user               User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  program            Program                       @relation(fields: [programId], references: [id])
+  section            Section?                      @relation(fields: [sectionId], references: [id])
+  enrollments        Enrollment[]
+  attendanceRecords  AttendanceRecord[]
+  marks              Mark[]
+  courseResults      CourseResult[]
+  leaveRequests      LeaveRequest[]
+  correctionRequests AttendanceCorrectionRequest[]
+
+  @@index([programId])
+  @@index([sectionId])
+  @@index([deletedAt])
+}
+
+model FacultyProfile {
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  employeeId   String    @unique
+  departmentId String
+  designation  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department     Department          @relation(fields: [departmentId], references: [id])
+  assignments    FacultyAssignment[]
+  timetableSlots TimetableSlot[]
+  classSessions  ClassSession[]
+
+  @@index([departmentId])
+  @@index([deletedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Academic structure
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Department {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  programs      Program[]
+  courses       Course[]
+  faculty       FacultyProfile[]
+  announcements Announcement[]
+}
+
+model Program {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  name           String
+  /// e.g. "B.Tech", "M.Tech", "MBA"
+  degree         String
+  departmentId   String
+  totalSemesters Int      @default(8)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  department Department       @relation(fields: [departmentId], references: [id])
+  sections   Section[]
+  students   StudentProfile[]
+
+  @@index([departmentId])
+}
+
+model AcademicYear {
+  id        String   @id @default(cuid())
+  /// e.g. "2025-26"
+  name      String   @unique
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  isCurrent Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  semesters Semester[]
+  holidays  Holiday[]
+}
+
+/// An academic term (e.g. "Odd Semester 2025-26"). A student's level (1..8) is Section.semesterNo.
+model Semester {
+  id             String   @id @default(cuid())
+  academicYearId String
+  name           String
+  term           Term
+  startDate      DateTime @db.Date
+  endDate        DateTime @db.Date
+  isCurrent      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  academicYear  AcademicYear   @relation(fields: [academicYearId], references: [id])
+  sections      Section[]
+  exams         Exam[]
+  courseResults CourseResult[]
+
+  @@unique([academicYearId, term])
+  @@index([isCurrent])
+}
+
+model Holiday {
+  id             String      @id @default(cuid())
+  academicYearId String
+  date           DateTime    @db.Date
+  name           String
+  type           HolidayType @default(PUBLIC)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@unique([academicYearId, date])
+  @@index([date])
+}
+
+model Course {
+  id           String     @id @default(cuid())
+  code         String     @unique
+  name         String
+  credits      Int
+  type         CourseType @default(THEORY)
+  departmentId String
+  /// Suggested semester level (1..8) this course is usually taught in.
+  semesterNo   Int?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  department     Department          @relation(fields: [departmentId], references: [id])
+  enrollments    Enrollment[]
+  assignments    FacultyAssignment[]
+  timetableSlots TimetableSlot[]
+  classSessions  ClassSession[]
+  exams          Exam[]
+  courseResults  CourseResult[]
+
+  @@index([departmentId])
+}
+
+/// A cohort of students in a program for one academic term (e.g. "CSE 3rd sem, Section A").
+model Section {
+  id         String   @id @default(cuid())
+  name       String
+  programId  String
+  semesterId String
+  /// Student level, 1..program.totalSemesters
+  semesterNo Int
+  capacity   Int      @default(60)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  program        Program             @relation(fields: [programId], references: [id])
+  semester       Semester            @relation(fields: [semesterId], references: [id])
+  students       StudentProfile[]
+  enrollments    Enrollment[]
+  assignments    FacultyAssignment[]
+  timetableSlots TimetableSlot[]
+  classSessions  ClassSession[]
+  exams          Exam[]
+  announcements  Announcement[]
+
+  @@unique([programId, semesterId, semesterNo, name])
+  @@index([semesterId])
+}
+
+/// A student taking a course within a section (supports electives and cross-section courses).
+model Enrollment {
+  id        String   @id @default(cuid())
+  studentId String
+  sectionId String
+  courseId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  section Section        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  course  Course         @relation(fields: [courseId], references: [id])
+
+  @@unique([studentId, sectionId, courseId])
+  @@index([sectionId, courseId])
+  @@index([courseId])
+}
+
+/// Faculty teaches a course to a section. This is the basis for faculty data scoping.
+model FacultyAssignment {
+  id        String   @id @default(cuid())
+  facultyId String
+  sectionId String
+  courseId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  faculty FacultyProfile @relation(fields: [facultyId], references: [id], onDelete: Cascade)
+  section Section        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  course  Course         @relation(fields: [courseId], references: [id])
+
+  @@unique([facultyId, sectionId, courseId])
+  @@index([sectionId, courseId])
+  @@index([courseId])
+}
+
+model Room {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  building  String?
+  capacity  Int
+  type      RoomType @default(CLASSROOM)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  timetableSlots TimetableSlot[]
+  classSessions  ClassSession[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Timetable & sessions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Recurring weekly slot. Clash detection: same day + overlapping minutes on room/faculty/section.
+model TimetableSlot {
+  id            String      @id @default(cuid())
+  sectionId     String
+  courseId      String
+  facultyId     String
+  roomId        String
+  /// 1 = Monday … 7 = Sunday (ISO-8601)
+  dayOfWeek     Int
+  startMinute   Int
+  endMinute     Int
+  type          SessionType @default(LECTURE)
+  effectiveFrom DateTime    @db.Date
+  effectiveTo   DateTime?   @db.Date
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  section       Section        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  course        Course         @relation(fields: [courseId], references: [id])
+  faculty       FacultyProfile @relation(fields: [facultyId], references: [id])
+  room          Room           @relation(fields: [roomId], references: [id])
+  classSessions ClassSession[]
+
+  @@index([sectionId, dayOfWeek])
+  @@index([facultyId, dayOfWeek])
+  @@index([roomId, dayOfWeek])
+  @@index([courseId])
+}
+
+/// A concrete class meeting on a date (materialized from a slot, or an extra/rescheduled class).
+model ClassSession {
+  id              String             @id @default(cuid())
+  timetableSlotId String?
+  sectionId       String
+  courseId        String
+  facultyId       String
+  roomId          String?
+  date            DateTime           @db.Date
+  startMinute     Int
+  endMinute       Int
+  kind            ClassSessionKind   @default(REGULAR)
+  status          ClassSessionStatus @default(SCHEDULED)
+  cancelReason    String?
+  attendanceState AttendanceState    @default(NOT_TAKEN)
+  finalizedById   String?
+  finalizedAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  timetableSlot      TimetableSlot?                @relation(fields: [timetableSlotId], references: [id], onDelete: SetNull)
+  section            Section                       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  course             Course                        @relation(fields: [courseId], references: [id])
+  faculty            FacultyProfile                @relation(fields: [facultyId], references: [id])
+  room               Room?                         @relation(fields: [roomId], references: [id])
+  finalizedBy        User?                         @relation("SessionFinalizedBy", fields: [finalizedById], references: [id])
+  attendance         AttendanceRecord[]
+  correctionRequests AttendanceCorrectionRequest[]
+
+  @@unique([timetableSlotId, date])
+  @@index([sectionId, date])
+  @@index([facultyId, date])
+  @@index([courseId, date])
+  @@index([roomId, date])
+}
+
+model AttendanceRecord {
+  id            String           @id @default(cuid())
+  sessionId     String
+  studentId     String
+  status        AttendanceStatus
+  method        AttendanceMethod
+  /// Cosine similarity of the best face match (null for MANUAL).
+  confidence    Float?
+  markedById    String?
+  confirmedById String?
+  confirmedAt   DateTime?
+  note          String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  session            ClassSession                  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student            StudentProfile                @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  markedBy           User?                         @relation("AttendanceMarkedBy", fields: [markedById], references: [id])
+  confirmedBy        User?                         @relation("AttendanceConfirmedBy", fields: [confirmedById], references: [id])
+  correctionRequests AttendanceCorrectionRequest[]
+
+  @@unique([sessionId, studentId])
+  @@index([studentId, status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Biometrics (never exposed via API)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One 512-d ArcFace embedding per enrollment photo.
+/// Matching is exact cosine distance over the (small) set of students in one section,
+/// so no ANN index is needed — and an ANN index would risk missing filtered results.
+model FaceEmbedding {
+  id           String                     @id @default(cuid())
+  userId       String
+  angle        FaceAngle
+  embedding    Unsupported("vector(512)")
+  modelName    String
+  qualityScore Float?
+  /// Private object-store key of the raw photo; null once the photo is deleted.
+  photoKey     String?
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, angle])
+  @@index([userId])
+}
+
+model BiometricConsent {
+  id             String    @id @default(cuid())
+  userId         String
+  /// Version of the consent text the user agreed to.
+  consentVersion String
+  givenAt        DateTime  @default(now())
+  ipAddress      String?
+  userAgent      String?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Exams, marks & results
+// ─────────────────────────────────────────────────────────────────────────────
+
+model GradeScale {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bands GradeBand[]
+}
+
+/// A grade band: percentage in [minPercent, 100] or below the next band's min → letter & points.
+model GradeBand {
+  id           String   @id @default(cuid())
+  gradeScaleId String
+  letter       String
+  minPercent   Float
+  gradePoint   Float
+  /// Whether this grade counts as passing (earns credits).
+  isPass       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  gradeScale GradeScale @relation(fields: [gradeScaleId], references: [id], onDelete: Cascade)
+
+  @@unique([gradeScaleId, letter])
+}
+
+model Exam {
+  id          String    @id @default(cuid())
+  name        String
+  type        ExamType
+  courseId    String
+  sectionId   String
+  semesterId  String
+  maxMarks    Float
+  /// Contribution to the course total, in percent (all exams of a course should sum to 100).
+  weightage   Float
+  date        DateTime? @db.Date
+  isPublished Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  course   Course   @relation(fields: [courseId], references: [id])
+  section  Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  semester Semester @relation(fields: [semesterId], references: [id])
+  marks    Mark[]
+
+  @@index([sectionId, courseId])
+  @@index([semesterId])
+}
+
+model Mark {
+  id            String   @id @default(cuid())
+  examId        String
+  studentId     String
+  marksObtained Float?
+  isAbsent      Boolean  @default(false)
+  enteredById   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  exam      Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student   StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  enteredBy User           @relation("MarkEnteredBy", fields: [enteredById], references: [id])
+
+  @@unique([examId, studentId])
+  @@index([studentId])
+}
+
+/// Final grade for a student in a course for a term. SGPA/CGPA are computed from these.
+model CourseResult {
+  id           String   @id @default(cuid())
+  studentId    String
+  courseId     String
+  semesterId   String
+  totalPercent Float
+  gradeLetter  String
+  gradePoint   Float
+  credits      Int
+  isPublished  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  student  StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course   Course         @relation(fields: [courseId], references: [id])
+  semester Semester       @relation(fields: [semesterId], references: [id])
+
+  @@unique([studentId, courseId, semesterId])
+  @@index([semesterId])
+  @@index([courseId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Communication & requests
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Announcement {
+  id           String               @id @default(cuid())
+  authorId     String
+  title        String
+  body         String
+  audience     AnnouncementAudience
+  targetRole   Role?
+  departmentId String?
+  sectionId    String?
+  publishedAt  DateTime             @default(now())
+  expiresAt    DateTime?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  author     User        @relation(fields: [authorId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  section    Section?    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([audience, publishedAt])
+  @@index([sectionId])
+  @@index([departmentId])
+  @@index([authorId])
+}
+
+model LeaveRequest {
+  id            String        @id @default(cuid())
+  studentId     String
+  fromDate      DateTime      @db.Date
+  toDate        DateTime      @db.Date
+  reason        String
+  attachmentKey String?
+  status        RequestStatus @default(PENDING)
+  reviewedById  String?
+  reviewedAt    DateTime?
+  reviewerNote  String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  student    StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  reviewedBy User?          @relation("LeaveReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([studentId, status])
+  @@index([status])
+}
+
+model AttendanceCorrectionRequest {
+  id                 String           @id @default(cuid())
+  studentId          String
+  sessionId          String
+  attendanceRecordId String?
+  requestedStatus    AttendanceStatus
+  reason             String
+  status             RequestStatus    @default(PENDING)
+  reviewedById       String?
+  reviewedAt         DateTime?
+  reviewerNote       String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  student          StudentProfile    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  session          ClassSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  attendanceRecord AttendanceRecord? @relation(fields: [attendanceRecordId], references: [id], onDelete: SetNull)
+  reviewedBy       User?             @relation("CorrectionReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([studentId, status])
+  @@index([sessionId])
+  @@index([status])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String?
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// System
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Append-only. Never store secrets (passwords, tokens, embeddings) in metadata.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+/// Key/value settings, validated by Zod schemas in lib/settings.ts.
+model Setting {
+  key         String   @id
+  value       Json
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+}
