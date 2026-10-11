@@ -8,6 +8,9 @@ const nav: NavItem[] = [
   { href: "/admin/timetable", label: "Timetable" },
   { href: "/admin/academics", label: "Academics" },
   { href: "/admin/analytics", label: "Analytics" },
+  { href: "/admin/requests", label: "Requests" },
+  { href: "/admin/announcements", label: "Announcements" },
+  { href: "/admin/audit", label: "Audit log" },
   { href: "/admin/settings", label: "Settings" },
 ];
 

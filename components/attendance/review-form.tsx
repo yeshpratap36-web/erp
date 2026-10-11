@@ -28,9 +28,12 @@ export type ReviewFormStudent = {
     suggested: "PRESENT" | "ABSENT" | null;
   };
   recorded: Status | null;
+  onLeave: boolean;
 };
 
 function SourceBadge({ s, hadPhotos }: { s: ReviewFormStudent; hadPhotos: boolean }) {
+  if (s.onLeave && s.proposal.source === "NONE")
+    return <Badge variant="outline">On approved leave</Badge>;
   if (s.proposal.source === "FACE")
     return <Badge className="bg-emerald-600">Face {s.proposal.similarity?.toFixed(2)}</Badge>;
   if (s.proposal.source === "UNCERTAIN")
@@ -64,7 +67,13 @@ export function ReviewForm({
     Object.fromEntries(
       students.map((s) => [
         s.id,
-        s.recorded ?? (hadPhotos ? (s.proposal.suggested ?? undefined) : undefined),
+        s.recorded ??
+          // Approved leave defaults to Excused unless the student was actually seen in class.
+          (s.onLeave && s.proposal.source === "NONE"
+            ? "EXCUSED"
+            : hadPhotos
+              ? (s.proposal.suggested ?? undefined)
+              : undefined),
       ]),
     ),
   );

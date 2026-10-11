@@ -4,6 +4,7 @@ import type { CurrentUser } from "@/lib/auth/session";
 import { APP_TIMEZONE } from "@/lib/config";
 import { db } from "@/lib/db";
 import { forbidden, HttpError, notFound } from "@/lib/errors";
+import { enrolledUserIds, notify } from "@/lib/services/notifications";
 import {
   findBookingClashes,
   findSlotClashes,
@@ -247,6 +248,16 @@ export async function cancelClass(input: z.output<typeof cancelClassSchema>, use
       "Attendance has already been taken for this class.",
     );
   }
+  const course = await db.course.findUniqueOrThrow({
+    where: { id: slot.courseId },
+    select: { code: true },
+  });
+  await notify(await enrolledUserIds(slot.sectionId, slot.courseId), {
+    type: "SCHEDULE_CHANGE",
+    title: `${course.code} on ${date.toISOString().slice(0, 10)} is cancelled`,
+    body: input.reason,
+    link: `/student/timetable?week=${date.toISOString().slice(0, 10)}`,
+  });
   if (existing) {
     return db.classSession.update({
       where: { id: existing.id },
@@ -284,6 +295,18 @@ export async function restoreOrRemoveSession(sessionId: string, user: CurrentUse
   if (session.date < today()) throw new HttpError(400, "past", "Past classes can't be changed.");
   // Deleting the row restores a weekly class to its default (scheduled) state.
   await db.classSession.delete({ where: { id: sessionId } });
+  const course = await db.course.findUniqueOrThrow({
+    where: { id: session.courseId },
+    select: { code: true },
+  });
+  const day = session.date.toISOString().slice(0, 10);
+  await notify(await enrolledUserIds(session.sectionId, session.courseId), {
+    type: "SCHEDULE_CHANGE",
+    title: session.timetableSlotId
+      ? `${course.code} on ${day} is back on`
+      : `Extra ${course.code} class on ${day} is cancelled`,
+    link: `/student/timetable?week=${day}`,
+  });
 }
 
 export async function scheduleExtraClass(
@@ -352,7 +375,7 @@ export async function scheduleExtraClass(
     );
   }
 
-  return db.classSession.create({
+  const created = await db.classSession.create({
     data: {
       sectionId: assignment.sectionId,
       courseId: assignment.courseId,
@@ -364,4 +387,15 @@ export async function scheduleExtraClass(
       kind: "EXTRA",
     },
   });
+  const course = await db.course.findUniqueOrThrow({
+    where: { id: assignment.courseId },
+    select: { code: true },
+  });
+  const day = date.toISOString().slice(0, 10);
+  await notify(await enrolledUserIds(assignment.sectionId, assignment.courseId), {
+    type: "SCHEDULE_CHANGE",
+    title: `Extra ${course.code} class on ${day} at ${minutesToHHMM(input.startMinute)}`,
+    link: `/student/timetable?week=${day}`,
+  });
+  return created;
 }

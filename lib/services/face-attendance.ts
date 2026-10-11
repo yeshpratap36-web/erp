@@ -11,6 +11,8 @@ import { getFaceProvider } from "@/lib/face";
 import { loadActiveSamples } from "@/lib/face/embeddings";
 import { FaceQualityError } from "@/lib/face/provider";
 import { rateLimit } from "@/lib/rate-limit";
+import { warnLowAttendance } from "@/lib/services/notifications";
+import { studentsOnLeave } from "@/lib/services/requests";
 import { getSetting } from "@/lib/settings.server";
 import { deletePrivateObjects, getPrivateObject, putPrivateObject } from "@/lib/storage";
 import { addDays, isoWeekday, nowIn } from "@/lib/time";
@@ -291,6 +293,8 @@ export type ReviewStudent = {
   proposal: Proposal;
   /** Current saved status, if attendance was confirmed before. */
   recorded: AttendanceStatus | null;
+  /** Has an approved leave covering this class's date. */
+  onLeave: boolean;
 };
 
 /** Everything the review screen needs. Contains no embeddings and no images. */
@@ -329,6 +333,10 @@ export async function sessionReview(sessionId: string, user: CurrentUser) {
     detections,
   );
   const recorded = new Map(session.attendance.map((r) => [r.studentId, r.status]));
+  const onLeave = await studentsOnLeave(
+    roster.map((s) => s.id),
+    session.date,
+  );
 
   const students: ReviewStudent[] = roster.map((s) => ({
     id: s.id,
@@ -337,6 +345,7 @@ export async function sessionReview(sessionId: string, user: CurrentUser) {
     faceStatus: s.faceEnrolledAt ? "ENROLLED" : s.biometricOptOutAt ? "OPTED_OUT" : "NOT_ENROLLED",
     proposal: proposals.get(s.id)!,
     recorded: recorded.get(s.id) ?? null,
+    onLeave: onLeave.has(s.id),
   }));
   const rollById = new Map(roster.map((s) => [s.id, s.rollNumber]));
 
@@ -494,4 +503,9 @@ export async function finalizeAttendance(
       metadata: o,
     });
   }
+  const sessionRow = await db.classSession.findUniqueOrThrow({
+    where: { id: sessionId },
+    select: { sectionId: true, courseId: true },
+  });
+  await warnLowAttendance(sessionRow.sectionId, sessionRow.courseId);
 }

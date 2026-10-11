@@ -5,6 +5,8 @@ const nav: NavItem[] = [
   { href: "/student/attendance", label: "Attendance" },
   { href: "/student/timetable", label: "Timetable" },
   { href: "/student/results", label: "Results" },
+  { href: "/student/requests", label: "Requests" },
+  { href: "/student/announcements", label: "Announcements" },
   { href: "/student/profile", label: "Profile" },
 ];
 

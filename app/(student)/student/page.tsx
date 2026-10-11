@@ -10,6 +10,7 @@ import { requireRole } from "@/lib/auth/session";
 import { APP_TIMEZONE } from "@/lib/config";
 import { formatDate } from "@/lib/format";
 import { studentAttendance } from "@/lib/services/attendance-stats";
+import { announcementFeed } from "@/lib/services/announcements";
 import { studentResults } from "@/lib/services/results";
 import { ownScheduleScope } from "@/lib/services/student";
 import { getOccurrences } from "@/lib/services/timetable";
@@ -20,10 +21,11 @@ export const metadata: Metadata = { title: "Home" };
 export default async function StudentHomePage() {
   const user = await requireRole("STUDENT");
   const now = nowIn(APP_TIMEZONE);
-  const [attendance, today, results] = await Promise.all([
+  const [attendance, today, results, announcements] = await Promise.all([
     studentAttendance(ownStudentId(user)),
     ownScheduleScope(user).then((scope) => getOccurrences(scope, now.date, now.date)),
     studentResults(ownStudentId(user)),
+    announcementFeed(user, { skip: 0, take: 3 }),
   ]);
   const { overall, threshold, courses } = attendance;
   const lowCourses = courses.filter((c) => c.belowThreshold);
@@ -139,8 +141,26 @@ export default async function StudentHomePage() {
             {results.current.length} courses have published marks this term.
           </p>
         </Section>
-        <Section title="Announcements">
-          <p className="text-sm text-muted-foreground">No announcements yet.</p>
+        <Section
+          title="Announcements"
+          actions={
+            <Link href="/student/announcements" className="text-sm underline underline-offset-4">
+              All
+            </Link>
+          }
+        >
+          {announcements.rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No announcements.</p>
+          ) : (
+            <ul className="space-y-2">
+              {announcements.rows.map((a) => (
+                <li key={a.id} className="text-sm">
+                  <div className="font-medium">{a.title}</div>
+                  <div className="line-clamp-2 text-muted-foreground">{a.body}</div>
+                </li>
+              ))}
+            </ul>
+          )}
         </Section>
       </div>
     </div>

@@ -13,6 +13,7 @@ import { assertSectionAccess } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { FieldValidationError, HttpError, notFound } from "@/lib/errors";
+import { enrolledUserIds, notify } from "@/lib/services/notifications";
 import type { examSchema } from "@/lib/validators/exams";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -120,6 +121,17 @@ export async function setExamPublished(examId: string, published: boolean, user:
     }
   }
   await db.exam.update({ where: { id: examId }, data: { isPublished: published } });
+  if (published) {
+    const course = await db.course.findUniqueOrThrow({
+      where: { id: exam.courseId },
+      select: { code: true },
+    });
+    await notify(await enrolledUserIds(exam.sectionId, exam.courseId), {
+      type: "RESULT_PUBLISHED",
+      title: `Marks published: ${course.code} ${exam.name}`,
+      link: "/student/results",
+    });
+  }
   await audit({
     actorId: user.id,
     action: published ? "exam.published" : "exam.unpublished",
@@ -345,6 +357,15 @@ export async function publishCourseResults(sectionId: string, courseId: string, 
       });
     }),
   );
+  const course = await db.course.findUniqueOrThrow({
+    where: { id: courseId },
+    select: { code: true },
+  });
+  await notify(await enrolledUserIds(sectionId, courseId), {
+    type: "RESULT_PUBLISHED",
+    title: `Final grade published: ${course.code}`,
+    link: "/student/results",
+  });
   await audit({
     actorId: user.id,
     action: "results.published",
