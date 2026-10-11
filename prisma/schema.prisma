@@ -5,7 +5,7 @@
 // - People records (User, StudentProfile, FacultyProfile) are soft-deleted via deletedAt.
 // - Foreign keys and common filter columns are indexed.
 // - Times of day are stored as minutes from midnight (Int) to make clash detection simple.
-// - Calendar dates use @db.Date; instants use timestamptz.
+// - Calendar dates use @db.Date; instants are stored as UTC timestamps.
 
 generator client {
   provider = "prisma-client"
@@ -161,6 +161,8 @@ model User {
   failedLoginAttempts Int            @default(0)
   lockedUntil         DateTime?
   lastLoginAt         DateTime?
+  /// Incremented to invalidate every outstanding JWT (password change/reset, deactivation, role change).
+  sessionVersion      Int            @default(0)
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
   deletedAt           DateTime?
@@ -766,6 +768,17 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([action])
   @@index([createdAt])
+}
+
+/// Fixed-window rate-limit counters (e.g. login attempts per IP). Shared across app instances.
+model RateLimitBucket {
+  key       String   @id
+  count     Int
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
 }
 
 /// Key/value settings, validated by Zod schemas in lib/settings.ts.

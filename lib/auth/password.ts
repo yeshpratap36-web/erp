@@ -1,6 +1,5 @@
 import { randomInt } from "node:crypto";
 import { hash, verify } from "@node-rs/argon2";
-import { z } from "zod";
 
 // OWASP-recommended argon2id parameters (19 MiB memory, 2 iterations).
 const ARGON2_OPTIONS = { memoryCost: 19456, timeCost: 2, parallelism: 1 } as const;
@@ -18,16 +17,6 @@ export async function verifyPassword(passwordHash: string, password: string): Pr
   }
 }
 
-/** Strength rules for user-chosen passwords. */
-export const passwordSchema = z
-  .string()
-  .min(10, "At least 10 characters")
-  .max(128, "At most 128 characters")
-  .regex(/[a-z]/, "At least one lowercase letter")
-  .regex(/[A-Z]/, "At least one uppercase letter")
-  .regex(/[0-9]/, "At least one number")
-  .regex(/[^A-Za-z0-9]/, "At least one symbol");
-
 // No look-alike characters (0/O, 1/l/I) so admins can read temp passwords aloud.
 const TEMP_ALPHABET = {
   lower: "abcdefghijkmnpqrstuvwxyz",
@@ -36,7 +25,7 @@ const TEMP_ALPHABET = {
   symbol: "@#$%&*!?",
 };
 
-/** Cryptographically random temporary password that satisfies `passwordSchema`. */
+/** Cryptographically random temporary password that satisfies `passwordSchema` (lib/validators/auth.ts). */
 export function generateTempPassword(length = 12): string {
   const pick = (chars: string) => chars[randomInt(chars.length)];
   const all = Object.values(TEMP_ALPHABET).join("");

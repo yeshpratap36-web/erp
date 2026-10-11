@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  generateTempPassword,
-  hashPassword,
-  passwordSchema,
-  verifyPassword,
-} from "@/lib/auth/password";
+import { generateTempPassword, hashPassword, verifyPassword } from "@/lib/auth/password";
+import { passwordSchema } from "@/lib/validators/auth";
 
 describe("password hashing", () => {
   it("verifies the correct password and rejects others", async () => {

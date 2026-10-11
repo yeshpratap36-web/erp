@@ -35,6 +35,24 @@ first login: `admin`, `FAC001`, `FAC002`, `26CSE001` … `26CSE020`.
 | `pnpm db:migrate` / `db:seed` / `db:reset` | Prisma migrations, seed, wipe & reseed |
 | `pnpm db:studio`                           | Browse the database                    |
 
+## Auth & access control
+
+Three layers, all required:
+
+1. **`proxy.ts`** — fast route protection from JWT claims (login, onboarding gate, role areas).
+2. **Server checks** — `requireRole()` / `requirePermission()` (`lib/auth/session.ts`) in every
+   layout, Server Action and API route (`apiRoute()` in `lib/api.ts`). These reload the user from
+   the DB, so deactivation and password resets (`sessionVersion` bump) take effect immediately.
+3. **Scoped queries** — `lib/auth/scope.ts` (`assertSectionAccess`, `assertStudentAccess`, …).
+
+Permissions live in `lib/permissions.ts`; routing rules in `lib/auth/routing.ts`.
+
+## End-to-end tests
+
+`pnpm test:e2e` builds the app, **resets and seeds a separate `college_erp_test` database**
+(never your dev DB), and runs the auth flows at desktop and mobile sizes. First run:
+`pnpm exec playwright install chromium`.
+
 ## Layout
 
 ```
