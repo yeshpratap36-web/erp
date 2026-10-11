@@ -14,14 +14,157 @@ and a small internal face-recognition service.
 
 ## Contents
 
-1. [Architecture](#architecture)
-2. [Local development](#local-development)
-3. [Testing](#testing)
-4. [Configuration](#configuration)
-5. [Deployment](#deployment)
-6. [Security & privacy](#security--privacy)
-7. [Face recognition](#face-recognition)
-8. [Known limitations & next steps](#known-limitations--next-steps)
+1. [Quick start with Docker](#quick-start-with-docker) (macOS, Windows, Linux)
+2. [Architecture](#architecture)
+3. [Local development](#local-development)
+4. [Testing](#testing)
+5. [Configuration](#configuration)
+6. [Deployment](#deployment)
+7. [Security & privacy](#security--privacy)
+8. [Face recognition](#face-recognition)
+9. [Known limitations & next steps](#known-limitations--next-steps)
+
+---
+
+## Quick start with Docker
+
+The fastest way to try the app: **only Docker is needed** — no Node.js, pnpm or Python. The
+whole stack (app + face service, Postgres + pgvector, MinIO for files) runs in containers.
+
+### 1. Install Docker
+
+You need Docker Engine **and** Docker Compose v2 (`docker compose`). Give Docker at least
+**4 GB of memory** (6 GB is comfortable) — building the image needs it.
+
+<details open>
+<summary><b>macOS</b> (Apple Silicon or Intel)</summary>
+
+- **Docker Desktop** — download from <https://www.docker.com/products/docker-desktop/>
+  (pick _Apple Silicon_ or _Intel chip_), open the `.dmg`, drag Docker to Applications and
+  start it. Or with Homebrew:
+
+  ```bash
+  brew install --cask docker
+  open -a Docker            # wait until the whale icon says "Docker Desktop is running"
+  ```
+
+  Memory: _Settings → Resources → Memory_ (≥ 4 GB).
+
+- **Alternatives** (free for commercial use): [OrbStack](https://orbstack.dev)
+  (`brew install --cask orbstack`) or Colima:
+
+  ```bash
+  brew install colima docker docker-compose docker-buildx
+  colima start --cpu 4 --memory 6
+  ```
+
+  With Colima, Compose is installed as a plugin; if `docker compose version` fails, follow the
+  one-line hint Homebrew printed (adds `cliPluginsExtraDirs` to `~/.docker/config.json`) or use
+  `docker-compose` (with a hyphen) in the commands below.
+
+</details>
+
+<details>
+<summary><b>Windows 10 (22H2) / 11</b></summary>
+
+1. Open **PowerShell as Administrator** and install WSL 2 (then restart Windows):
+
+   ```powershell
+   wsl --install
+   ```
+
+2. Install **Docker Desktop** from <https://www.docker.com/products/docker-desktop/>, or:
+
+   ```powershell
+   winget install -e --id Docker.DockerDesktop
+   ```
+
+   Start Docker Desktop and keep _Use the WSL 2 based engine_ enabled (the default).
+
+3. Recommended: run everything **inside WSL** (Ubuntu) — it's much faster for file access, and
+   the deploy scripts are bash. In Docker Desktop enable _Settings → Resources → WSL
+   integration → Ubuntu_, then open the **Ubuntu** app and use the Linux commands below.
+   Cloning in PowerShell also works; the repo's `.gitattributes` keeps shell scripts with Unix
+   line endings so the image builds correctly either way.
+
+Memory: with WSL 2, Docker can use up to half of your RAM by default (set `memory=6GB` under
+`[wsl2]` in `%UserProfile%\.wslconfig` to change it).
+
+</details>
+
+<details>
+<summary><b>Linux</b> (Ubuntu, Debian, Fedora, …)</summary>
+
+```bash
+curl -fsSL https://get.docker.com | sh       # Docker Engine + Compose plugin (official script)
+sudo usermod -aG docker $USER                 # run docker without sudo …
+newgrp docker                                 # … in this shell (or log out and back in)
+```
+
+Or follow the per-distribution guide at <https://docs.docker.com/engine/install/>. Docker
+Desktop for Linux also works.
+
+</details>
+
+Check the installation (all three must succeed):
+
+```bash
+docker version
+docker compose version
+docker run --rm hello-world
+```
+
+### 2. Run the app
+
+The same commands work in macOS Terminal, Linux shells, WSL and Windows PowerShell:
+
+```bash
+git clone https://github.com/imajij/Student_ERP_Fronetend.git college-erp
+cd college-erp
+
+docker compose --profile app up -d --build    # first build takes ~5–10 minutes
+docker compose run --rm app migrate           # create the database tables
+docker compose run --rm app seed              # sample college: admin, 2 faculty, 20 students
+docker compose run --rm app demo              # optional: past attendance, marks and results
+```
+
+Open **<http://localhost:3080>** (`open http://localhost:3080` on macOS,
+`start http://localhost:3080` on Windows, `xdg-open http://localhost:3080` on Linux).
+
+**Sign in** with password `ChangeMe@123` as `admin`, `FAC001` / `FAC002` (faculty) or
+`26CSE001` … `26CSE020` (students). You'll be asked to set a new password the first time.
+After `demo`, students `26CSE001`–`003` and `26CSE011`–`013` are already onboarded.
+
+Health check: <http://localhost:3080/api/health> → `{"ok":true,"database":true,"faceService":true}`.
+
+### 3. Everyday commands
+
+| Task                             | Command                                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------------------- |
+| Status                           | `docker compose --profile app ps`                                                         |
+| Follow the app's logs            | `docker compose logs -f app`                                                              |
+| Rebuild after pulling new code   | `git pull` then `docker compose --profile app up -d --build` and `… run --rm app migrate` |
+| Stop (data is kept)              | `docker compose --profile app down`                                                       |
+| Start again                      | `docker compose --profile app up -d`                                                      |
+| **Delete everything** (all data) | `docker compose --profile app down -v`                                                    |
+| MinIO console (uploaded files)   | <http://localhost:9001> — `minioadmin` / `minioadmin`                                     |
+
+Everything listens on `127.0.0.1` only, so nothing is exposed to your network. The demo
+secrets in `docker-compose.yml` are for local testing only — never use this file in
+production (see [Deployment](#deployment)). `seed` and `demo` refuse to run unless
+`ALLOW_DEMO_DATA=1` is set, which only the local compose file does.
+
+### Troubleshooting
+
+| Problem                                                    | Fix                                                                                                                                                                             |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port is already allocated` (5432, 9000, 9001, 8001, 3080) | Stop whatever uses it (often a local Postgres: `brew services stop postgresql` / `sudo systemctl stop postgresql`), or change the left side of the port in `docker-compose.yml` |
+| Build stops with `killed` / exit code 137                  | Give Docker more memory (≥ 4 GB) and run the build again                                                                                                                        |
+| `unknown flag: --profile` or `compose` not found           | You have Compose v1 — update Docker, or use `docker-compose` (with a hyphen)                                                                                                    |
+| `start.sh: not found` / `\r` errors (Windows)              | The repo was checked out with CRLF line endings: `git config --global core.autocrlf input`, then clone again (or clone inside WSL)                                              |
+| Signed in as the wrong user / logged out unexpectedly      | Browsers share cookies across `localhost` ports — don't run `pnpm dev` (:3000) and Docker (:3080) in the same browser profile, or sign out first                                |
+| `faceService: false` in the health check                   | `docker compose logs app` — the face service runs inside the app container; manual attendance still works                                                                       |
+| `Database already has users — skipping seed`               | Already seeded. To start over: `docker compose --profile app down -v`, then repeat step 2                                                                                       |
 
 ---
 
@@ -59,6 +202,17 @@ and a small internal face-recognition service.
 
 Prerequisites: **Node.js ≥ 20.9** (22 recommended), **pnpm ≥ 10**, **Docker** (with
 `docker compose` or `docker-compose`). Python is only needed to run the face-service tests.
+
+Installing the tools (Docker: see [Install Docker](#1-install-docker)):
+
+| OS      | Node.js 22 + pnpm                                                                                                    |
+| ------- | -------------------------------------------------------------------------------------------------------------------- |
+| macOS   | `brew install node@22 pnpm` (or [nvm](https://github.com/nvm-sh/nvm): `nvm install 22`, then `corepack enable pnpm`) |
+| Windows | Inside WSL, as on Linux (recommended); or `winget install OpenJS.NodeJS.LTS` then `corepack enable pnpm`             |
+| Linux   | [nvm](https://github.com/nvm-sh/nvm): `nvm install 22`, then `corepack enable pnpm`                                  |
+
+This workflow runs the app on your machine with hot reload, and only the services in Docker
+(the `app` container from the quick start is not started without `--profile app`).
 
 ```bash
 pnpm install                     # also generates the Prisma client

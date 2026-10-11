@@ -3,6 +3,9 @@
 #   serve      run the face service (127.0.0.1 only) + Next.js; exit if either dies (default)
 #   migrate    apply pending Prisma migrations
 #   bootstrap  settings, grade scale and the first admin (needs ADMIN_LOGIN_ID/EMAIL/NAME)
+#   seed       sample data for local testing (1 admin, 2 faculty, 20 students)
+#   demo       sample attendance, marks and results on top of `seed`
+#              (both refuse unless ALLOW_DEMO_DATA=1 — set only by the local docker-compose app)
 #   upload-backup <file>   copy a database dump to the S3/R2 bucket (used by the backup cron)
 set -euo pipefail
 cd /app
@@ -25,6 +28,14 @@ case "$cmd" in
     ;;
   bootstrap)
     exec node_modules/.bin/tsx prisma/bootstrap.ts
+    ;;
+  seed|demo)
+    if [[ "${ALLOW_DEMO_DATA:-}" != "1" ]]; then
+      echo "Refusing to load sample data: set ALLOW_DEMO_DATA=1 (local testing only)." >&2
+      exit 1
+    fi
+    [[ "$cmd" == seed ]] && exec node_modules/.bin/tsx prisma/seed.ts
+    NODE_ENV=development exec node_modules/.bin/tsx prisma/demo.ts
     ;;
   upload-backup)
     exec node docker/upload-backup.mjs "$@"

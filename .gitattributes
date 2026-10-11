@@ -1,0 +1,9 @@
+# Keep Unix line endings for files that run inside Linux containers / servers, even when the
+# repo is cloned on Windows (CRLF would break the container entrypoint and deploy scripts).
+* text=auto
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker/** text eol=lf
+deploy/** text eol=lf
+services/face/** text eol=lf
+*.py text eol=lf

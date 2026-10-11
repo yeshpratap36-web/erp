@@ -1,4 +1,7 @@
-# Local development infrastructure: Postgres (with pgvector) + MinIO (S3-compatible).
+# Local infrastructure: Postgres (with pgvector) + MinIO (S3-compatible) + face service.
+#   docker compose up -d                 → services for `pnpm dev`
+#   docker compose --profile app up -d   → also the complete app from the Dockerfile (port 3080)
+# Every port is bound to 127.0.0.1. Defaults below are for local use only.
 name: college-erp
 
 services:
@@ -58,7 +61,7 @@ services:
     build: ./services/face
     restart: unless-stopped
     environment:
-      FACE_SERVICE_TOKEN: ${FACE_SERVICE_TOKEN:?set FACE_SERVICE_TOKEN in .env}
+      FACE_SERVICE_TOKEN: ${FACE_SERVICE_TOKEN:-local-dev-face-token-not-for-production-0000}
     ports:
       - "127.0.0.1:8001:8001"
     healthcheck:
@@ -72,6 +75,35 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  # The production image, run against the services above (no Node.js needed on your machine).
+  # Its own face service runs inside the container; the `face` service above is for `pnpm dev`.
+  app:
+    profiles: ["app"]
+    build: .
+    image: college-erp:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://erp:erp@postgres:5432/college_erp?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:-local-only-auth-secret-not-for-production-0000}
+      AUTH_URL: http://localhost:3080
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET: college-erp-private
+      S3_FORCE_PATH_STYLE: "true"
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Kolkata}
+      SEED_DEFAULT_PASSWORD: ${SEED_DEFAULT_PASSWORD:-ChangeMe@123}
+      # Allows `docker compose run --rm app seed|demo` (sample data) — local only.
+      ALLOW_DEMO_DATA: "1"
+    ports:
+      - "127.0.0.1:3080:3000"
 
 volumes:
   postgres-data:
