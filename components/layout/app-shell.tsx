@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { RoleGate } from "@/components/auth/role-gate";
+import { NavLinks, type NavItem } from "@/components/layout/nav-links";
+import { PageSkeleton } from "@/components/layout/page-skeleton";
 import { UserMenu } from "@/components/layout/user-menu";
 import type { Role } from "@/generated/prisma/enums";
 
-export type NavItem = { href: string; label: string };
+export type { NavItem };
 
 /**
  * Shell for signed-in areas. The header/nav prerender as a static shell; everything that
@@ -35,20 +37,9 @@ export function AppShell({
           </div>
         </div>
         {nav.length > 1 && (
-          <nav className="mx-auto max-w-6xl overflow-x-auto px-4" aria-label="Main">
-            <ul className="flex gap-1 pb-2 text-sm">
-              {nav.map((item) => (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className="block rounded-md px-3 py-1.5 whitespace-nowrap text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          <div className="mx-auto max-w-6xl px-4 pb-2">
+            <NavLinks items={nav} label="Main" />
+          </div>
         )}
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
@@ -56,15 +47,6 @@ export function AppShell({
           <RoleGate roles={[role]}>{children}</RoleGate>
         </Suspense>
       </main>
-    </div>
-  );
-}
-
-function PageSkeleton() {
-  return (
-    <div className="space-y-4" aria-busy="true" aria-label="Loading">
-      <div className="h-8 w-48 animate-pulse rounded-md bg-muted" />
-      <div className="h-32 animate-pulse rounded-lg bg-muted" />
     </div>
   );
 }
