@@ -100,6 +100,19 @@ enum FaceEmbeddingStatus {
   ACTIVE
 }
 
+enum AttendancePhotoStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum FaceMatchStatus {
+  MATCHED
+  UNCERTAIN
+  UNMATCHED
+}
+
 enum FaceAngle {
   FRONT
   LEFT
@@ -189,6 +202,7 @@ model User {
   sessionsFinalized   ClassSession[]                @relation("SessionFinalizedBy")
   leaveReviewed       LeaveRequest[]                @relation("LeaveReviewedBy")
   correctionsReviewed AttendanceCorrectionRequest[] @relation("CorrectionReviewedBy")
+  attendancePhotos    AttendancePhoto[]
 
   @@index([role])
   @@index([deletedAt])
@@ -209,6 +223,8 @@ model StudentProfile {
   faceEnrolledAt      DateTime?
   /// Set by admin/faculty to let a student redo face enrollment.
   faceReenrollAllowed Boolean   @default(false)
+  /// Set when the student declined biometric consent; attendance is marked manually.
+  biometricOptOutAt   DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   deletedAt           DateTime?
@@ -222,6 +238,7 @@ model StudentProfile {
   courseResults      CourseResult[]
   leaveRequests      LeaveRequest[]
   correctionRequests AttendanceCorrectionRequest[]
+  detectedFaces      DetectedFace[]
 
   @@index([programId])
   @@index([sectionId])
@@ -493,6 +510,7 @@ model ClassSession {
   finalizedBy        User?                         @relation("SessionFinalizedBy", fields: [finalizedById], references: [id])
   attendance         AttendanceRecord[]
   correctionRequests AttendanceCorrectionRequest[]
+  photos             AttendancePhoto[]
 
   @@unique([timetableSlotId, date])
   @@index([sectionId, date])
@@ -524,6 +542,46 @@ model AttendanceRecord {
 
   @@unique([sessionId, studentId])
   @@index([studentId, status])
+}
+
+/// A classroom photo uploaded by faculty for face attendance. The image lives in the private
+/// bucket only until attendance is finalized; detections (no embeddings) are kept.
+model AttendancePhoto {
+  id           String                @id @default(cuid())
+  sessionId    String
+  uploadedById String
+  photoKey     String?
+  status       AttendancePhotoStatus @default(PENDING)
+  error        String?
+  faceCount    Int?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  session    ClassSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  uploadedBy User           @relation(fields: [uploadedById], references: [id])
+  faces      DetectedFace[]
+
+  @@index([sessionId, status])
+}
+
+/// One face found in a classroom photo and its match result. Classroom-face embeddings are
+/// never stored — only the outcome, so thresholds can be calibrated from real data.
+model DetectedFace {
+  id             String          @id @default(cuid())
+  photoId        String
+  /// [x, y, width, height] in original-image pixels.
+  box            Json
+  detectionScore Float
+  studentId      String?
+  similarity     Float?
+  status         FaceMatchStatus
+  createdAt      DateTime        @default(now())
+
+  photo   AttendancePhoto @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  student StudentProfile? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+
+  @@index([photoId])
+  @@index([studentId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

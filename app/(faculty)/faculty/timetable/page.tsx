@@ -4,6 +4,7 @@ import { PageHeader, Section } from "@/components/admin/page-header";
 import { ActionForm } from "@/components/forms/action-form";
 import { ConfirmAction } from "@/components/forms/confirm-action";
 import { Field, SelectField } from "@/components/forms/field";
+import { AttendanceButton } from "@/components/attendance/attendance-button";
 import { occurrenceBadge } from "@/components/schedule/occurrence-list";
 import { WeekNav } from "@/components/timetable/week-nav";
 import { WeekView } from "@/components/timetable/week-view";
@@ -19,8 +20,8 @@ export const metadata: Metadata = { title: "My timetable" };
 
 const querySchema = z.object({ week: z.string().max(10).optional().catch(undefined) });
 
-function OccurrenceActions({ o, today }: { o: OccurrenceView; today: Date }) {
-  // Only upcoming classes without attendance can be changed.
+/** Schedule changes for upcoming classes that have no attendance yet. */
+function ScheduleChange({ o, today }: { o: OccurrenceView; today: Date }) {
   if (o.date < today || o.attendanceState !== "NOT_TAKEN") return null;
   if (o.slotId && !o.cancelled) {
     return (
@@ -35,17 +36,35 @@ function OccurrenceActions({ o, today }: { o: OccurrenceView; today: Date }) {
       />
     );
   }
-  if (o.sessionId) {
+  if (o.slotId && o.cancelled && o.sessionId) {
     return (
       <ConfirmAction
         action={restoreSessionAction}
         fields={{ sessionId: o.sessionId }}
-        label={o.slotId ? "Restore class" : "Remove extra class"}
-        confirm={o.slotId ? undefined : `Remove the extra ${o.course.code} class?`}
+        label="Restore class"
+      />
+    );
+  }
+  if (!o.slotId && o.sessionId && !o.cancelled) {
+    return (
+      <ConfirmAction
+        action={restoreSessionAction}
+        fields={{ sessionId: o.sessionId }}
+        label="Remove extra class"
+        confirm={`Remove the extra ${o.course.code} class?`}
       />
     );
   }
   return null;
+}
+
+function OccurrenceActions({ o, today }: { o: OccurrenceView; today: Date }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <AttendanceButton o={o} today={today} />
+      <ScheduleChange o={o} today={today} />
+    </div>
+  );
 }
 
 export default async function FacultyTimetablePage({

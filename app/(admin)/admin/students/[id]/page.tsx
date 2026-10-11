@@ -118,7 +118,9 @@ export default async function StudentPage({ params }: PageProps<"/admin/students
             Biometric consent:{" "}
             {biometrics.consent
               ? `${formatDateTime(biometrics.consent.givenAt)} (${biometrics.consent.consentVersion})`
-              : "not given"}
+              : biometrics.optedOutAt
+                ? `opted out ${formatDateTime(biometrics.optedOutAt)} (manual attendance)`
+                : "not given"}
           </div>
         </dl>
         <AccountActions

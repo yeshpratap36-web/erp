@@ -5,7 +5,7 @@ import { ConsentForm } from "@/components/face/consent-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CONSENT_PATH } from "@/lib/auth/routing";
 import { getSetting } from "@/lib/settings.server";
-import { giveConsentAction } from "../actions";
+import { declineConsentAction, giveConsentAction } from "../actions";
 
 export const metadata: Metadata = { title: "Biometric consent" };
 
@@ -24,6 +24,7 @@ export default function ConsentPage() {
             <CardContent>
               <ConsentForm
                 action={giveConsentAction}
+                declineAction={declineConsentAction}
                 deletesPhotos={await getSetting("face.deleteRawPhotosAfterEnrollment")}
               />
             </CardContent>

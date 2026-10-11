@@ -103,6 +103,7 @@ export async function sectionCourseRoster(sectionId: string, courseId: string) {
             rollNumber: true,
             faceEnrolledAt: true,
             faceReenrollAllowed: true,
+            biometricOptOutAt: true,
             user: { select: { name: true, isActive: true } },
           },
         },
@@ -129,6 +130,7 @@ export async function sectionCourseRoster(sectionId: string, courseId: string) {
     isActive: student.user.isActive,
     faceEnrolled: student.faceEnrolledAt !== null,
     faceReenrollAllowed: student.faceReenrollAllowed,
+    faceOptedOut: student.biometricOptOutAt !== null,
     ...summarize(tally(byStudent.get(student.id) ?? []), threshold),
   }));
   return { threshold, held, students };

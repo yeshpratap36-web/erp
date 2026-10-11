@@ -68,7 +68,7 @@ export default async function CourseRosterPage({
             cell: (s) => (
               <div className="space-y-1">
                 <span className="text-xs text-muted-foreground">
-                  {s.faceEnrolled ? "Enrolled" : "Not enrolled"}
+                  {s.faceEnrolled ? "Enrolled" : s.faceOptedOut ? "Opted out" : "Not enrolled"}
                   {s.faceReenrollAllowed && " · retake allowed"}
                 </span>
                 <ConfirmAction

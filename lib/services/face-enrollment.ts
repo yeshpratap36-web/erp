@@ -38,7 +38,13 @@ const OTHER_PERSON_MAX = 0.55;
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-export type EnrollmentMode = "onboarding" | "reenroll";
+/**
+ * - onboarding: first-login step 3
+ * - self: an onboarded student without active face data (opted out earlier, or data deleted)
+ *   who has now consented — no permission needed to enroll for the first time
+ * - reenroll: replacing existing face data, which an admin/faculty must allow
+ */
+export type EnrollmentMode = "onboarding" | "self" | "reenroll";
 
 async function hasActiveConsent(userId: string) {
   const consent = await db.biometricConsent.findFirst({
@@ -48,17 +54,15 @@ async function hasActiveConsent(userId: string) {
   return consent !== null;
 }
 
-/**
- * Whether this user may upload enrollment photos right now, and in which mode:
- * first-time onboarding, or re-enrollment that an admin/faculty allowed.
- */
+/** Whether this user may upload enrollment photos right now, and in which mode. */
 export async function enrollmentMode(user: CurrentUser): Promise<EnrollmentMode | null> {
   if (user.role !== "STUDENT" || !user.studentProfile || user.mustChangePassword) return null;
   if (!(await hasActiveConsent(user.id))) return null;
   if (user.onboardingStep === "FACE_ENROLLMENT") return "onboarding";
-  if (user.onboardingStep === "COMPLETE" && user.studentProfile.faceReenrollAllowed)
-    return "reenroll";
-  return null;
+  if (user.onboardingStep !== "COMPLETE") return null;
+  const active = await db.faceEmbedding.count({ where: { userId: user.id, status: "ACTIVE" } });
+  if (active === 0) return "self";
+  return user.studentProfile.faceReenrollAllowed ? "reenroll" : null;
 }
 
 /** Record consent. During onboarding this moves the student on to face enrollment. */
@@ -76,6 +80,7 @@ export async function giveConsent(user: CurrentUser) {
         userAgent: ctx.userAgent,
       },
     }),
+    db.studentProfile.update({ where: { userId: user.id }, data: { biometricOptOutAt: null } }),
     ...(user.onboardingStep === "BIOMETRIC_CONSENT" || user.onboardingStep === "CHANGE_PASSWORD"
       ? [db.user.update({ where: { id: user.id }, data: { onboardingStep: "FACE_ENROLLMENT" } })]
       : []),
@@ -86,6 +91,43 @@ export async function giveConsent(user: CurrentUser) {
     entityType: "User",
     entityId: user.id,
     metadata: { version },
+    context: ctx,
+  });
+}
+
+/**
+ * The student declines (or withdraws) biometric consent: any consent is revoked, unfinished
+ * samples and photos are deleted, onboarding completes, and attendance is marked manually.
+ * Already-ACTIVE face data is only removed through deleteBiometricData (admin, on request).
+ */
+export async function declineConsent(user: CurrentUser) {
+  if (user.role !== "STUDENT" || !user.studentProfile) throw forbidden();
+  const ctx = await requestContext();
+  const pending = await db.faceEmbedding.findMany({
+    where: { userId: user.id, status: "PENDING" },
+    select: { photoKey: true },
+  });
+  await db.$transaction([
+    db.faceEmbedding.deleteMany({ where: { userId: user.id, status: "PENDING" } }),
+    db.biometricConsent.updateMany({
+      where: { userId: user.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+    db.studentProfile.update({
+      where: { userId: user.id },
+      data: { biometricOptOutAt: new Date() },
+    }),
+    db.user.updateMany({
+      where: { id: user.id, onboardingStep: { in: ["BIOMETRIC_CONSENT", "FACE_ENROLLMENT"] } },
+      data: { onboardingStep: "COMPLETE" },
+    }),
+  ]);
+  await deletePrivateObjects(pending.flatMap((p) => (p.photoKey ? [p.photoKey] : [])));
+  await audit({
+    actorId: user.id,
+    action: "biometric.consent_declined",
+    entityType: "User",
+    entityId: user.id,
     context: ctx,
   });
 }
@@ -251,5 +293,14 @@ export async function enrollmentStatus(userId: string) {
     }),
   ]);
   const count = (s: "ACTIVE" | "PENDING") => counts.find((c) => c.status === s)?._count ?? 0;
-  return { active: count("ACTIVE"), pending: count("PENDING"), consent };
+  const profile = await db.studentProfile.findUnique({
+    where: { userId },
+    select: { biometricOptOutAt: true },
+  });
+  return {
+    active: count("ACTIVE"),
+    pending: count("PENDING"),
+    consent,
+    optedOutAt: profile?.biometricOptOutAt ?? null,
+  };
 }

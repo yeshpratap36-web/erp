@@ -21,12 +21,15 @@ export function OccurrenceList({
   nowMinute,
   show,
   empty,
+  renderAction,
 }: {
   occurrences: OccurrenceView[];
   nowMinute?: number;
   /** Which secondary line to show: the section (faculty) or the teacher (students). */
   show: "section" | "faculty";
   empty: string;
+  /** Optional per-class action (e.g. "Take attendance"). */
+  renderAction?: (o: OccurrenceView) => React.ReactNode;
 }) {
   if (occurrences.length === 0) {
     return (
@@ -54,7 +57,10 @@ export function OccurrenceList({
                 {o.cancelled && o.cancelReason && ` · ${o.cancelReason}`}
               </div>
             </div>
-            {badge && <Badge variant={badge.variant}>{badge.label}</Badge>}
+            <div className="flex flex-col items-end gap-2">
+              {badge && <Badge variant={badge.variant}>{badge.label}</Badge>}
+              {renderAction?.(o)}
+            </div>
           </li>
         );
       })}

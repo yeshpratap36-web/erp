@@ -6,7 +6,7 @@ import type { ActionState } from "@/lib/actions";
 import { FACE_ENROLLMENT_PATH } from "@/lib/auth/routing";
 import { requireSession } from "@/lib/auth/session";
 import { HttpError } from "@/lib/errors";
-import { completeEnrollment, giveConsent } from "@/lib/services/face-enrollment";
+import { completeEnrollment, declineConsent, giveConsent } from "@/lib/services/face-enrollment";
 
 // These run during onboarding, so they can't use formAction() (which requires a fully
 // onboarded user). Each one re-checks the session and the student's state itself.
@@ -33,6 +33,15 @@ export async function completeEnrollmentAction(_prev: ActionState): Promise<Acti
     if (err instanceof HttpError) return { error: err.message };
     throw err;
   }
+  await unstable_update({});
+  redirect("/student");
+}
+
+/** "I don't consent" — finish onboarding without face enrollment. */
+export async function declineConsentAction(_prev: ActionState): Promise<ActionState> {
+  const user = await requireSession();
+  if (user.role !== "STUDENT") return { error: "Only students enroll their face." };
+  await declineConsent(user);
   await unstable_update({});
   redirect("/student");
 }

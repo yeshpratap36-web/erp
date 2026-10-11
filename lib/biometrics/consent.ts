@@ -31,6 +31,6 @@ export const consentSections = (deletesPhotos: boolean): { title: string; body: 
   },
   {
     title: "Your choices",
-    body: "You can ask the college office to delete your biometric data at any time. Your attendance will then be marked manually.",
+    body: "Taking part is your choice. You can decline now, or later ask the college office to delete your biometric data — in either case your attendance is marked manually by your teachers, with no other consequence.",
   },
 ];

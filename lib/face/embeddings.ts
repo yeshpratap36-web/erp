@@ -115,3 +115,22 @@ export async function deleteAllEmbeddings(userId: string): Promise<string[]> {
     return rows.flatMap((r) => (r.photoKey ? [r.photoKey] : []));
   });
 }
+
+/**
+ * ACTIVE samples for the given users, for in-process matching only. The vectors never
+ * leave the server; callers must not return them in any response.
+ */
+export async function loadActiveSamples(userIds: string[]): Promise<Map<string, number[][]>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await db.$queryRaw<{ userId: string; embedding: string }[]>`
+    SELECT "userId", "embedding"::text AS "embedding"
+    FROM "FaceEmbedding"
+    WHERE "status" = 'ACTIVE' AND "userId" = ANY(${userIds})`;
+  const out = new Map<string, number[][]>();
+  for (const r of rows) {
+    const list = out.get(r.userId) ?? [];
+    list.push(JSON.parse(r.embedding) as number[]);
+    out.set(r.userId, list);
+  }
+  return out;
+}

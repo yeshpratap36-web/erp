@@ -16,10 +16,12 @@ export type AuditAction =
   | "user.reactivated"
   | "user.unlocked"
   | "user.role_changed"
+  | "attendance.finalized"
   | "attendance.overridden"
   | "marks.edited"
   | "settings.updated"
   | "biometric.consent_given"
+  | "biometric.consent_declined"
   | "biometric.enrolled"
   | "biometric.duplicate_face_blocked"
   | "biometric.data_deleted";

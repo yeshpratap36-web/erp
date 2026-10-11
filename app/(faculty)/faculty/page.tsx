@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHeader, Section } from "@/components/admin/page-header";
+import { AttendanceButton } from "@/components/attendance/attendance-button";
 import { OccurrenceList } from "@/components/schedule/occurrence-list";
 import { requireRole } from "@/lib/auth/session";
 import { APP_TIMEZONE } from "@/lib/config";
@@ -68,6 +69,7 @@ export default async function FacultyDashboardPage() {
           nowMinute={now.minute}
           show="section"
           empty="No classes today."
+          renderAction={(o) => <AttendanceButton o={o} today={now.date} />}
         />
       </Section>
 

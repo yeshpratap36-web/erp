@@ -20,3 +20,16 @@ const dateTimeFmt = new Intl.DateTimeFormat("en-IN", {
   timeZone: APP_TIMEZONE,
 });
 export const formatDateTime = (d: Date | null | undefined) => (d ? dateTimeFmt.format(d) : "—");
+
+const instantDateFmt = new Intl.DateTimeFormat("en-IN", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: APP_TIMEZONE,
+});
+/**
+ * Calendar day of a *timestamp* in the institution's timezone. (formatDate is for @db.Date
+ * values, which are stored at UTC midnight and must be read in UTC.)
+ */
+export const formatInstantDate = (d: Date | null | undefined) =>
+  d ? instantDateFmt.format(d) : "—";
