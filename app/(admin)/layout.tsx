@@ -7,6 +7,8 @@ const nav: NavItem[] = [
   { href: "/admin/import", label: "Bulk import" },
   { href: "/admin/timetable", label: "Timetable" },
   { href: "/admin/academics", label: "Academics" },
+  { href: "/admin/analytics", label: "Analytics" },
+  { href: "/admin/settings", label: "Settings" },
 ];
 
 export default function AdminLayout({ children }: LayoutProps<"/">) {

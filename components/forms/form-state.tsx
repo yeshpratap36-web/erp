@@ -8,5 +8,10 @@ export const FormStateContext = createContext<ActionState<unknown>>({});
 
 export function useFieldState(name: string) {
   const state = use(FormStateContext);
-  return { errors: state.fieldErrors?.[name], submittedValue: state.values?.[name] };
+  return {
+    errors: state.fieldErrors?.[name],
+    submittedValue: state.values?.[name],
+    /** True after a submission that returned values (i.e. an error the form should restore). */
+    submitted: state.values !== undefined,
+  };
 }

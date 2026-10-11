@@ -65,6 +65,8 @@ export function formAction<S extends z.ZodType, T = undefined>(
 
     try {
       const result = (await handler(parsed.data, user)) ?? { ok: true };
+      // A handler-reported error keeps the user's input on screen, like a validation error.
+      if (result.error || result.fieldErrors) return { ...result, values: result.values ?? values };
       refresh();
       return result;
     } catch (err) {

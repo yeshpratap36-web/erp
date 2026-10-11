@@ -57,6 +57,8 @@ export function apiRoute<I = undefined, O = unknown, P = Record<string, string>>
       }
 
       const data = await handler({ user, input, params: await segment.params, req });
+      // Handlers may return a ready Response (e.g. a CSV download).
+      if (data instanceof Response) return data;
       return NextResponse.json<ApiSuccess<O>>({ ok: true, data });
     } catch (err) {
       // Let Next.js internals through (prerender bail-out on headers(), redirect(), notFound()).

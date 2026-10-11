@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { DataTable } from "@/components/admin/data-table";
 import { PageHeader } from "@/components/admin/page-header";
+import { CourseTabs } from "@/components/faculty/course-tabs";
 import { ConfirmAction } from "@/components/forms/confirm-action";
 import { AttendancePercent } from "@/components/schedule/attendance-percent";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +40,17 @@ export default async function CourseRosterPage({
         title={`${course.code} — ${course.name}`}
         description={`${sectionLabel(section)} · ${roster.students.length} students · ${roster.held} classes held · threshold ${roster.threshold}%`}
         back={{ href: "/faculty", label: "Dashboard" }}
+        actions={
+          <a
+            href={`/api/faculty/courses/${sectionId}/${courseId}/attendance`}
+            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-muted"
+            download
+          >
+            Download CSV
+          </a>
+        }
       />
+      <CourseTabs sectionId={sectionId} courseId={courseId} />
       {low.length > 0 && (
         <p className="text-sm">
           <Badge variant="destructive">{low.length}</Badge> student

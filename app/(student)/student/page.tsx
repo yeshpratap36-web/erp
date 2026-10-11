@@ -10,6 +10,7 @@ import { requireRole } from "@/lib/auth/session";
 import { APP_TIMEZONE } from "@/lib/config";
 import { formatDate } from "@/lib/format";
 import { studentAttendance } from "@/lib/services/attendance-stats";
+import { studentResults } from "@/lib/services/results";
 import { ownScheduleScope } from "@/lib/services/student";
 import { getOccurrences } from "@/lib/services/timetable";
 import { nowIn } from "@/lib/time";
@@ -19,9 +20,10 @@ export const metadata: Metadata = { title: "Home" };
 export default async function StudentHomePage() {
   const user = await requireRole("STUDENT");
   const now = nowIn(APP_TIMEZONE);
-  const [attendance, today] = await Promise.all([
+  const [attendance, today, results] = await Promise.all([
     studentAttendance(ownStudentId(user)),
     ownScheduleScope(user).then((scope) => getOccurrences(scope, now.date, now.date)),
+    studentResults(ownStudentId(user)),
   ]);
   const { overall, threshold, courses } = attendance;
   const lowCourses = courses.filter((c) => c.belowThreshold);
@@ -114,9 +116,27 @@ export default async function StudentHomePage() {
       </Section>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Section title="Results">
-          <p className="text-sm text-muted-foreground">
-            Marks and GPA will appear here once results are published.
+        <Section
+          title="Results"
+          actions={
+            <Link href="/student/results" className="text-sm underline underline-offset-4">
+              Details
+            </Link>
+          }
+        >
+          <p className="text-sm">
+            CGPA{" "}
+            <span className="font-semibold tabular-nums">{results.cgpa?.toFixed(2) ?? "—"}</span>
+            {results.terms.length > 0 && (
+              <span className="text-muted-foreground">
+                {" "}
+                · latest SGPA {results.terms.at(-1)!.sgpa?.toFixed(2) ?? "—"}
+              </span>
+            )}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {results.current.filter((c) => c.progress.percent !== null).length} of{" "}
+            {results.current.length} courses have published marks this term.
           </p>
         </Section>
         <Section title="Announcements">

@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
 import { APP_TIMEZONE } from "@/lib/config";
 import { expandOccurrences } from "@/lib/timetable/occurrences";
+import { gradeFor } from "@/lib/academics/grading";
 import { addDays, nowIn } from "@/lib/time";
 
 const PER_SECTION = Number(process.env.DEMO_ONBOARDED_PER_SECTION ?? 3);
@@ -155,11 +156,216 @@ async function main() {
     }
   }
 
+  // ── 3. Exams & marks this term, 4. past-term results ─────────────────────
+  const { exams: createdExams, results: createdResults } = await demoAcademics(
+    term,
+    sections.map((s) => s.id),
+  );
+
   console.log(`
 Demo data ready.
   Onboarded students (password ${PASSWORD}): ${onboarded.join(", ")}
   New past sessions: ${createdSessions}   New attendance records: ${createdRecords}
+  New exams: ${createdExams}   New past course results: ${createdResults}
 `);
+}
+
+/** Ability 0–1 per student, tied to the same pattern as demo attendance (every 7th struggles). */
+function abilityOf(index: number, random: () => number) {
+  const base = index % 7 === 1 ? 0.38 : 0.6 + (index % 5) * 0.07;
+  return Math.min(0.98, Math.max(0.1, base + (random() - 0.5) * 0.12));
+}
+
+async function demoAcademics(term: { id: string; startDate: Date }, sectionIds: string[]) {
+  const random = rng(7);
+  const bands = (
+    await db.gradeScale.findFirstOrThrow({ where: { isDefault: true }, include: { bands: true } })
+  ).bands;
+  const facultyUsers = new Map(
+    (await db.facultyProfile.findMany({ select: { id: true, userId: true } })).map((f) => [
+      f.id,
+      f.userId,
+    ]),
+  );
+  const students = await db.studentProfile.findMany({
+    where: { sectionId: { in: sectionIds }, deletedAt: null },
+    orderBy: { rollNumber: "asc" },
+    select: { id: true },
+  });
+  const ability = new Map(students.map((s, i) => [s.id, abilityOf(i, random)]));
+
+  // Current term: one set of assessments per (section, course).
+  const plan = [
+    {
+      name: "Quiz 1",
+      type: "QUIZ" as const,
+      maxMarks: 20,
+      weightage: 10,
+      week: 3,
+      published: true,
+    },
+    {
+      name: "Assignment 1",
+      type: "ASSIGNMENT" as const,
+      maxMarks: 10,
+      weightage: 10,
+      week: 5,
+      published: true,
+    },
+    {
+      name: "Midterm",
+      type: "MIDTERM" as const,
+      maxMarks: 50,
+      weightage: 30,
+      week: 8,
+      published: true,
+    },
+    {
+      name: "End-term",
+      type: "ENDTERM" as const,
+      maxMarks: 100,
+      weightage: 50,
+      week: 20,
+      published: false,
+    },
+  ];
+  let exams = 0;
+  const offerings = await db.facultyAssignment.findMany({
+    where: { sectionId: { in: sectionIds } },
+    distinct: ["sectionId", "courseId"],
+    select: { sectionId: true, courseId: true, facultyId: true },
+  });
+  for (const o of offerings) {
+    if (
+      await db.exam.count({
+        where: { sectionId: o.sectionId, courseId: o.courseId, semesterId: term.id },
+      })
+    )
+      continue;
+    const roster = await db.enrollment.findMany({
+      where: { sectionId: o.sectionId, courseId: o.courseId },
+      select: { studentId: true },
+    });
+    for (const p of plan) {
+      const exam = await db.exam.create({
+        data: {
+          name: p.name,
+          type: p.type,
+          courseId: o.courseId,
+          sectionId: o.sectionId,
+          semesterId: term.id,
+          maxMarks: p.maxMarks,
+          weightage: p.weightage,
+          date: addDays(term.startDate, p.week * 7),
+          isPublished: p.published,
+        },
+      });
+      exams++;
+      if (!p.published) continue; // end-term not held yet
+      await db.mark.createMany({
+        data: roster.map(({ studentId }) => {
+          const absent = random() < 0.03;
+          const score = Math.min(
+            1,
+            Math.max(0, (ability.get(studentId) ?? 0.6) + (random() - 0.5) * 0.2),
+          );
+          return {
+            examId: exam.id,
+            studentId,
+            isAbsent: absent,
+            marksObtained: absent ? null : Math.round(score * p.maxMarks * 2) / 2,
+            enteredById: facultyUsers.get(o.facultyId)!,
+          };
+        }),
+      });
+    }
+  }
+
+  // Past year: two terms of published results so SGPA history and CGPA have data.
+  const dept = await db.department.findFirstOrThrow({ where: { code: "CSE" } });
+  const pastYear =
+    (await db.academicYear.findUnique({ where: { name: "2025-26" } })) ??
+    (await db.academicYear.create({
+      data: { name: "2025-26", startDate: new Date("2025-07-01"), endDate: new Date("2026-06-30") },
+    }));
+  const pastTerms = [
+    {
+      term: "ODD" as const,
+      name: "Odd Semester 2025-26",
+      start: "2025-07-15",
+      end: "2025-12-15",
+      semesterNo: 1,
+    },
+    {
+      term: "EVEN" as const,
+      name: "Even Semester 2025-26",
+      start: "2026-01-05",
+      end: "2026-05-31",
+      semesterNo: 2,
+    },
+  ];
+  const pastCourses: Record<number, { code: string; name: string; credits: number }[]> = {
+    1: [
+      { code: "CS101", name: "Programming Fundamentals", credits: 4 },
+      { code: "MA101", name: "Engineering Mathematics I", credits: 4 },
+      { code: "PH101", name: "Engineering Physics", credits: 3 },
+      { code: "HS101", name: "Communication Skills", credits: 2 },
+    ],
+    2: [
+      { code: "CS201", name: "Object-Oriented Programming", credits: 4 },
+      { code: "MA201", name: "Engineering Mathematics II", credits: 4 },
+      { code: "EC201", name: "Digital Logic", credits: 3 },
+      { code: "CS202", name: "Programming Lab", credits: 2 },
+    ],
+  };
+  let results = 0;
+  for (const t of pastTerms) {
+    const semester =
+      (await db.semester.findUnique({
+        where: { academicYearId_term: { academicYearId: pastYear.id, term: t.term } },
+      })) ??
+      (await db.semester.create({
+        data: {
+          academicYearId: pastYear.id,
+          name: t.name,
+          term: t.term,
+          startDate: new Date(t.start),
+          endDate: new Date(t.end),
+        },
+      }));
+    for (const c of pastCourses[t.semesterNo]) {
+      const course =
+        (await db.course.findUnique({ where: { code: c.code } })) ??
+        (await db.course.create({
+          data: { ...c, departmentId: dept.id, semesterNo: t.semesterNo },
+        }));
+      const res = await db.courseResult.createMany({
+        skipDuplicates: true,
+        data: students.map((s) => {
+          const percent =
+            Math.round(
+              Math.min(
+                100,
+                Math.max(15, ((ability.get(s.id) ?? 0.6) + (random() - 0.5) * 0.25) * 100),
+              ) * 100,
+            ) / 100;
+          const band = gradeFor(percent, bands);
+          return {
+            studentId: s.id,
+            courseId: course.id,
+            semesterId: semester.id,
+            totalPercent: percent,
+            gradeLetter: band.letter,
+            gradePoint: band.gradePoint,
+            credits: course.credits,
+            isPublished: true,
+          };
+        }),
+      });
+      results += res.count;
+    }
+  }
+  return { exams, results };
 }
 
 main()
