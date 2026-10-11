@@ -7,6 +7,7 @@ import { ConfirmAction } from "@/components/forms/confirm-action";
 import { Field, SelectField, type SelectOption } from "@/components/forms/field";
 import type { IssuedCredential } from "@/lib/services/users";
 import {
+  deleteBiometricDataAction,
   createFacultyAction,
   createStudentAction,
   resetPasswordAction,
@@ -112,6 +113,7 @@ export function AccountActions({
   isLocked,
   isSelf,
   faceReenrollAllowed,
+  hasBiometricData,
 }: {
   userId: string;
   name: string;
@@ -120,6 +122,8 @@ export function AccountActions({
   isSelf: boolean;
   /** Only for students. */
   faceReenrollAllowed?: boolean;
+  /** Only for students: whether any biometric data (consent or face samples) exists. */
+  hasBiometricData?: boolean;
 }) {
   if (isSelf) {
     return (
@@ -159,6 +163,22 @@ export function AccountActions({
             action={setFaceReenrollAction}
             fields={{ userId, allowed: String(!faceReenrollAllowed) }}
             label={faceReenrollAllowed ? "Revoke permission" : "Allow re-enrollment"}
+          />
+        </div>
+      )}
+      {hasBiometricData && (
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Biometric data</p>
+          <p className="text-xs text-muted-foreground">
+            Deletes face templates and photos and revokes consent. Attendance is then marked
+            manually.
+          </p>
+          <ConfirmAction
+            action={deleteBiometricDataAction}
+            fields={{ userId }}
+            label="Delete biometric data"
+            variant="destructive"
+            confirm={`Permanently delete ${name}'s face data and revoke their consent?`}
           />
         </div>
       )}

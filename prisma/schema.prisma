@@ -93,6 +93,13 @@ enum AttendanceMethod {
   MANUAL
 }
 
+/// PENDING embeddings belong to an enrollment in progress; they replace the ACTIVE set
+/// atomically when the student finishes. Only ACTIVE embeddings are used for matching.
+enum FaceEmbeddingStatus {
+  PENDING
+  ACTIVE
+}
+
 enum FaceAngle {
   FRONT
   LEFT
@@ -523,25 +530,28 @@ model AttendanceRecord {
 // Biometrics (never exposed via API)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// One 512-d ArcFace embedding per enrollment photo.
+/// One 128-d SFace embedding (L2-normalized) per enrollment photo.
 /// Matching is exact cosine distance over the (small) set of students in one section,
 /// so no ANN index is needed — and an ANN index would risk missing filtered results.
+/// Never returned by any API; read only by lib/face/*.
 model FaceEmbedding {
-  id           String                     @id @default(cuid())
-  userId       String
-  angle        FaceAngle
-  embedding    Unsupported("vector(512)")
-  modelName    String
-  qualityScore Float?
+  id             String                     @id @default(cuid())
+  userId         String
+  angle          FaceAngle
+  status         FaceEmbeddingStatus        @default(PENDING)
+  embedding      Unsupported("vector(128)")
+  modelName      String
+  detectionScore Float?
+  sharpness      Float?
   /// Private object-store key of the raw photo; null once the photo is deleted.
-  photoKey     String?
-  createdAt    DateTime                   @default(now())
-  updatedAt    DateTime                   @updatedAt
+  photoKey       String?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, angle])
-  @@index([userId])
+  @@unique([userId, angle, status])
+  @@index([userId, status])
 }
 
 model BiometricConsent {

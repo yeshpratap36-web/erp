@@ -54,11 +54,11 @@ export default async function StudentProfilePage() {
         <Link href="/change-password" className="text-sm underline underline-offset-4">
           Change password
         </Link>
-        {profile.faceReenrollAllowed && (
-          <p className="text-sm text-muted-foreground">
-            Face re-enrollment has been enabled for your account.
-          </p>
-        )}
+        <Link href="/student/face" className="block text-sm underline underline-offset-4">
+          {profile.faceReenrollAllowed
+            ? "Retake face photos (enabled for you)"
+            : "Face enrollment status"}
+        </Link>
       </Section>
     </div>
   );

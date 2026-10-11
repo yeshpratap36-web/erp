@@ -25,7 +25,12 @@ type HandlerContext<I, P> = { user: CurrentUser; input: I; params: P; req: NextR
  * `input` is read from the JSON body for POST/PUT/PATCH/DELETE and from the query string for GET.
  */
 export function apiRoute<I = undefined, O = unknown, P = Record<string, string>>(
-  options: { permission?: Action; input?: z.ZodType<I> },
+  options: {
+    permission?: Action;
+    input?: z.ZodType<I>;
+    /** Allow users who haven't finished onboarding (only for onboarding endpoints). */
+    allowDuringOnboarding?: boolean;
+  },
   handler: (ctx: HandlerContext<I, P>) => Promise<O>,
 ) {
   return async (req: NextRequest, segment: { params: Promise<P> }) => {
@@ -33,7 +38,9 @@ export function apiRoute<I = undefined, O = unknown, P = Record<string, string>>
       const session = await getCurrentUser();
       if (session.status !== "authenticated") return fail(401, "unauthenticated");
       const { user } = session;
-      if (requiredOnboardingPath(user)) return fail(403, "onboarding_required");
+      if (!options.allowDuringOnboarding && requiredOnboardingPath(user)) {
+        return fail(403, "onboarding_required");
+      }
       if (options.permission && !can(user, options.permission)) return fail(403, "forbidden");
 
       let input = undefined as I;

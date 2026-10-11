@@ -15,7 +15,7 @@ Attendance (with face recognition), academics and administration for a college â
 ```bash
 pnpm install                 # also generates the Prisma client
 cp .env.example .env         # defaults match docker-compose
-pnpm services:up             # Postgres (pgvector) on :5432, MinIO on :9000 (console :9001)
+pnpm services:up             # Postgres (pgvector) :5432, MinIO :9000 (console :9001), face service :8001
 pnpm db:migrate              # apply migrations
 pnpm db:seed                 # 1 admin, 2 faculty, 20 students, courses, timetable
 pnpm dev                     # http://localhost:3000
@@ -38,6 +38,19 @@ first login: `admin`, `FAC001`, `FAC002`, `26CSE001` â€¦ `26CSE020`.
 | `pnpm services:up` / `services:down`       | Local Postgres + MinIO                 |
 | `pnpm db:migrate` / `db:seed` / `db:reset` | Prisma migrations, seed, wipe & reseed |
 | `pnpm db:studio`                           | Browse the database                    |
+
+## Face recognition
+
+`services/face` is a small internal Python (FastAPI) service running OpenCV Zoo's **YuNet**
+detector (MIT) and **SFace** recognizer (Apache-2.0), chosen for their commercial-friendly
+licenses. It is stateless and only callable by the Next.js backend with `FACE_SERVICE_TOKEN`
+(generate with `openssl rand -hex 32`; docker-compose reads it from `.env`). The app talks to
+it through `FaceRecognitionProvider` (`lib/face/`), so it can be swapped (e.g. AWS Rekognition)
+without touching app logic; switching models requires students to re-enroll.
+
+Biometric data handling: explicit, versioned consent; 128-d embeddings in pgvector, never
+returned by any API; raw photos in the private bucket and deleted after enrollment by default
+(`face.deleteRawPhotosAfterEnrollment`); admins can delete a student's data on request.
 
 ## Auth & access control
 

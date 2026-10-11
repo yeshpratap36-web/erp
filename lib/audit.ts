@@ -20,6 +20,8 @@ export type AuditAction =
   | "marks.edited"
   | "settings.updated"
   | "biometric.consent_given"
+  | "biometric.enrolled"
+  | "biometric.duplicate_face_blocked"
   | "biometric.data_deleted";
 
 type AuditInput = {

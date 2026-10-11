@@ -11,7 +11,7 @@ export async function OnboardingGate({
   children,
 }: {
   path: string;
-  children: (user: CurrentUser) => React.ReactNode;
+  children: (user: CurrentUser) => React.ReactNode | Promise<React.ReactNode>;
 }) {
   const user = await requireSession();
   if (requiredOnboardingPath(user) !== path) redirect(homePathFor(user));

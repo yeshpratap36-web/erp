@@ -8,6 +8,7 @@ import { currentSectionOptions, programOptions } from "@/lib/admin/options";
 import { requirePermission } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import { enrollmentStatus } from "@/lib/services/face-enrollment";
 import { updateStudentAction } from "../../users/actions";
 import { AccountActions } from "../../users/user-forms";
 
@@ -31,7 +32,11 @@ export default async function StudentPage({ params }: PageProps<"/admin/students
   if (!user?.studentProfile) notFound();
   const profile = user.studentProfile;
 
-  const [programs, sections] = await Promise.all([programOptions(), currentSectionOptions()]);
+  const [programs, sections, biometrics] = await Promise.all([
+    programOptions(),
+    currentSectionOptions(),
+    enrollmentStatus(user.id),
+  ]);
   // Keep a past-term section selectable so editing other fields doesn't silently drop it.
   if (profile.section && !sections.some((s) => s.value === profile.section!.id)) {
     sections.unshift({
@@ -105,6 +110,16 @@ export default async function StudentPage({ params }: PageProps<"/admin/students
           <div>Password changed: {formatDateTime(user.passwordChangedAt)}</div>
           <div>Onboarding: {user.onboardingStep.toLowerCase().replace(/_/g, " ")}</div>
           <div>Face enrolled: {formatDateTime(profile.faceEnrolledAt)}</div>
+          <div>
+            Face samples: {biometrics.active} active
+            {biometrics.pending ? `, ${biometrics.pending} pending` : ""}
+          </div>
+          <div>
+            Biometric consent:{" "}
+            {biometrics.consent
+              ? `${formatDateTime(biometrics.consent.givenAt)} (${biometrics.consent.consentVersion})`
+              : "not given"}
+          </div>
         </dl>
         <AccountActions
           userId={user.id}
@@ -113,6 +128,7 @@ export default async function StudentPage({ params }: PageProps<"/admin/students
           isLocked={isLocked}
           isSelf={user.id === admin.id}
           faceReenrollAllowed={profile.faceReenrollAllowed}
+          hasBiometricData={!!biometrics.consent || biometrics.active + biometrics.pending > 0}
         />
       </Section>
     </div>

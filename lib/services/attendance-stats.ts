@@ -98,7 +98,13 @@ export async function sectionCourseRoster(sectionId: string, courseId: string) {
       orderBy: { student: { rollNumber: "asc" } },
       select: {
         student: {
-          select: { id: true, rollNumber: true, user: { select: { name: true, isActive: true } } },
+          select: {
+            id: true,
+            rollNumber: true,
+            faceEnrolledAt: true,
+            faceReenrollAllowed: true,
+            user: { select: { name: true, isActive: true } },
+          },
         },
       },
     }),
@@ -121,6 +127,8 @@ export async function sectionCourseRoster(sectionId: string, courseId: string) {
     rollNumber: student.rollNumber,
     name: student.user.name,
     isActive: student.user.isActive,
+    faceEnrolled: student.faceEnrolledAt !== null,
+    faceReenrollAllowed: student.faceReenrollAllowed,
     ...summarize(tally(byStudent.get(student.id) ?? []), threshold),
   }));
   return { threshold, held, students };

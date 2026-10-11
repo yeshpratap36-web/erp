@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { DataTable } from "@/components/admin/data-table";
 import { PageHeader } from "@/components/admin/page-header";
+import { ConfirmAction } from "@/components/forms/confirm-action";
 import { AttendancePercent } from "@/components/schedule/attendance-percent";
 import { Badge } from "@/components/ui/badge";
 import { canAccessSection } from "@/lib/auth/scope";
@@ -9,6 +10,7 @@ import { requireRole } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { sectionCourseRoster } from "@/lib/services/attendance-stats";
 import { sectionLabel } from "@/lib/services/timetable";
+import { setStudentFaceReenrollAction } from "../../../actions";
 
 export const metadata: Metadata = { title: "Course roster" };
 
@@ -59,6 +61,23 @@ export default async function CourseRosterPage({
           {
             header: "To reach threshold",
             cell: (s) => (s.belowThreshold ? `${s.needed} more` : "—"),
+            hideOnMobile: true,
+          },
+          {
+            header: "Face",
+            cell: (s) => (
+              <div className="space-y-1">
+                <span className="text-xs text-muted-foreground">
+                  {s.faceEnrolled ? "Enrolled" : "Not enrolled"}
+                  {s.faceReenrollAllowed && " · retake allowed"}
+                </span>
+                <ConfirmAction
+                  action={setStudentFaceReenrollAction}
+                  fields={{ studentId: s.id, allowed: String(!s.faceReenrollAllowed) }}
+                  label={s.faceReenrollAllowed ? "Revoke retake" : "Allow retake"}
+                />
+              </div>
+            ),
             hideOnMobile: true,
           },
         ]}

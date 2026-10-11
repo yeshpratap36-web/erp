@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { formAction } from "@/lib/actions.server";
+import { deleteBiometricData } from "@/lib/services/face-enrollment";
 import {
   createFaculty,
   createStudent,
@@ -74,5 +75,12 @@ export const setFaceReenrollAction = formAction(
   { ...manage, schema: faceReenrollSchema },
   async ({ userId, allowed }, admin) => {
     await setFaceReenrollAllowed(userId, allowed, admin.id);
+  },
+);
+
+export const deleteBiometricDataAction = formAction(
+  { ...manage, schema: userIdSchema },
+  async ({ userId }, admin) => {
+    await deleteBiometricData(userId, admin.id);
   },
 );

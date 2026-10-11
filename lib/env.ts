@@ -14,6 +14,8 @@ const envSchema = z.object({
   S3_SECRET_ACCESS_KEY: z.string().min(1),
   S3_BUCKET: z.string().min(1),
   S3_FORCE_PATH_STYLE: z.stringbool().default(false),
+  FACE_SERVICE_URL: z.url(),
+  FACE_SERVICE_TOKEN: z.string().min(32, "FACE_SERVICE_TOKEN must be at least 32 characters"),
 });
 
 export type Env = z.infer<typeof envSchema>;

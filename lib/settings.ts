@@ -6,7 +6,7 @@ import { z } from "zod";
  */
 export const settingSchemas = {
   "attendance.threshold": z.number().min(0).max(100),
-  /** Cosine similarity at/above which a face is auto-matched. */
+  /** Cosine similarity at/above which a face is auto-matched (SFace; OpenCV suggests ≥ 0.363). */
   "face.matchThreshold": z.number().min(0).max(1),
   /** Cosine similarity at/above which a face is shown as an "uncertain" candidate. */
   "face.uncertainThreshold": z.number().min(0).max(1),
@@ -20,9 +20,9 @@ export type SettingValue<K extends SettingKey> = z.infer<(typeof settingSchemas)
 
 export const settingDefaults: { [K in SettingKey]: SettingValue<K> } = {
   "attendance.threshold": 75,
-  "face.matchThreshold": 0.45,
-  "face.uncertainThreshold": 0.35,
-  "face.deleteRawPhotosAfterEnrollment": false,
+  "face.matchThreshold": 0.42,
+  "face.uncertainThreshold": 0.33,
+  "face.deleteRawPhotosAfterEnrollment": true,
   "auth.maxFailedAttempts": 5,
   "auth.lockoutMinutes": 15,
 };
