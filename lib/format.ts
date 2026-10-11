@@ -1,3 +1,5 @@
+import { APP_TIMEZONE } from "@/lib/config";
+
 /** Date → "YYYY-MM-DD" for <input type="date"> (dates are stored at UTC midnight). */
 export const toDateInput = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : "");
 
@@ -15,6 +17,6 @@ const dateTimeFmt = new Intl.DateTimeFormat("en-IN", {
   year: "numeric",
   hour: "2-digit",
   minute: "2-digit",
-  timeZone: "Asia/Kolkata",
+  timeZone: APP_TIMEZONE,
 });
 export const formatDateTime = (d: Date | null | undefined) => (d ? dateTimeFmt.format(d) : "—");

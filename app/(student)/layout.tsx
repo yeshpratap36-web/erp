@@ -1,6 +1,11 @@
 import { AppShell, type NavItem } from "@/components/layout/app-shell";
 
-const nav: NavItem[] = [{ href: "/student", label: "Dashboard" }];
+const nav: NavItem[] = [
+  { href: "/student", label: "Home" },
+  { href: "/student/attendance", label: "Attendance" },
+  { href: "/student/timetable", label: "Timetable" },
+  { href: "/student/profile", label: "Profile" },
+];
 
 export default function StudentLayout({ children }: LayoutProps<"/">) {
   return (

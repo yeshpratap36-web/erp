@@ -21,6 +21,10 @@ pnpm db:seed                 # 1 admin, 2 faculty, 20 students, courses, timetab
 pnpm dev                     # http://localhost:3000
 ```
 
+Optional demo data (dev only): `pnpm db:demo` marks the first 3 students of each section as fully
+onboarded and generates past classes with attendance, so the student and faculty dashboards
+have something to show. Safe to re-run.
+
 Seeded logins all use `SEED_DEFAULT_PASSWORD` (default `ChangeMe@123`) and must change it on
 first login: `admin`, `FAC001`, `FAC002`, `26CSE001` … `26CSE020`.
 
