@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
 import { APP_TIMEZONE } from "@/lib/config";
 import { expandOccurrences } from "@/lib/timetable/occurrences";
+import { academicYearFor } from "@/lib/academics/calendar";
 import { gradeFor } from "@/lib/academics/grading";
 import { addDays, nowIn } from "@/lib/time";
 
@@ -283,26 +284,15 @@ async function demoAcademics(term: { id: string; startDate: Date }, sectionIds: 
 
   // Past year: two terms of published results so SGPA history and CGPA have data.
   const dept = await db.department.findFirstOrThrow({ where: { code: "CSE" } });
+  const past = academicYearFor(new Date(), -1);
   const pastYear =
-    (await db.academicYear.findUnique({ where: { name: "2025-26" } })) ??
+    (await db.academicYear.findUnique({ where: { name: past.name } })) ??
     (await db.academicYear.create({
-      data: { name: "2025-26", startDate: new Date("2025-07-01"), endDate: new Date("2026-06-30") },
+      data: { name: past.name, startDate: past.startDate, endDate: past.endDate },
     }));
   const pastTerms = [
-    {
-      term: "ODD" as const,
-      name: "Odd Semester 2025-26",
-      start: "2025-07-15",
-      end: "2025-12-15",
-      semesterNo: 1,
-    },
-    {
-      term: "EVEN" as const,
-      name: "Even Semester 2025-26",
-      start: "2026-01-05",
-      end: "2026-05-31",
-      semesterNo: 2,
-    },
+    { ...past.odd, semesterNo: 1 },
+    { ...past.even, semesterNo: 2 },
   ];
   const pastCourses: Record<number, { code: string; name: string; credits: number }[]> = {
     1: [
@@ -329,8 +319,8 @@ async function demoAcademics(term: { id: string; startDate: Date }, sectionIds: 
           academicYearId: pastYear.id,
           name: t.name,
           term: t.term,
-          startDate: new Date(t.start),
-          endDate: new Date(t.end),
+          startDate: t.startDate,
+          endDate: t.endDate,
         },
       }));
     for (const c of pastCourses[t.semesterNo]) {

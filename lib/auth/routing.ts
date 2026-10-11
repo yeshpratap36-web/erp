@@ -16,6 +16,8 @@ export const LOGIN_PATH = "/login";
 /** Clears the session cookie; must stay reachable in every state to break redirect loops. */
 export const LOGOUT_PATH = "/logout";
 export const CHANGE_PASSWORD_PATH = "/change-password";
+/** Unauthenticated liveness/readiness check for load balancers. */
+export const HEALTH_PATH = "/api/health";
 export const CONSENT_PATH = "/onboarding/consent";
 export const FACE_ENROLLMENT_PATH = "/onboarding/face";
 /** API routes the onboarding pages call (Phase 5: consent + face upload). */
@@ -72,7 +74,13 @@ export function safeCallbackPath(value: string | null | undefined): string | nul
 }
 
 export function decideRoute(pathname: string, user: RoutingUser | null): RouteDecision {
-  if (matchesPrefix(pathname, "/api/auth") || pathname === LOGOUT_PATH) return { type: "allow" };
+  if (
+    matchesPrefix(pathname, "/api/auth") ||
+    pathname === LOGOUT_PATH ||
+    pathname === HEALTH_PATH
+  ) {
+    return { type: "allow" };
+  }
 
   const isApi = matchesPrefix(pathname, "/api");
   const isLogin = pathname === LOGIN_PATH;

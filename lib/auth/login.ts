@@ -4,7 +4,7 @@ import type { OnboardingStep, Role } from "@/generated/prisma/enums";
 import { audit } from "@/lib/audit";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { db } from "@/lib/db";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimit, rateLimitReached } from "@/lib/rate-limit";
 import type { loginSchema } from "@/lib/validators/auth";
 import { getSetting } from "@/lib/settings.server";
 
@@ -22,8 +22,13 @@ export type AuthenticatedUser = {
 
 type LoginResult = { ok: true; user: AuthenticatedUser } | { ok: false; reason: LoginFailure };
 
-const IP_LIMIT = { limit: 30, windowSeconds: 15 * 60 };
-const IDENTIFIER_LIMIT = { limit: 10, windowSeconds: 15 * 60 };
+/**
+ * Only *failed* attempts count. Many students sign in from one campus IP (NAT), so the
+ * per-IP limit is generous and only slows password guessing from a single network;
+ * per-account protection comes from the identifier limit and the account lockout.
+ */
+const IP_FAILURE_LIMIT = { limit: 100, windowSeconds: 15 * 60 };
+const IDENTIFIER_FAILURE_LIMIT = { limit: 10, windowSeconds: 15 * 60 };
 
 // Verified against when the account doesn't exist, so response time doesn't reveal
 // whether an identifier is registered.
@@ -46,20 +51,24 @@ export async function authenticate(
 ): Promise<LoginResult> {
   const identifier = input.identifier.toLowerCase();
 
-  const [ipCheck, idCheck] = await Promise.all([
-    context.ipAddress
-      ? rateLimit(`login:ip:${context.ipAddress}`, IP_LIMIT.limit, IP_LIMIT.windowSeconds)
-      : null,
-    rateLimit(`login:id:${identifier}`, IDENTIFIER_LIMIT.limit, IDENTIFIER_LIMIT.windowSeconds),
+  const ipKey = context.ipAddress ? `login:ip:${context.ipAddress}` : null;
+  const idKey = `login:id:${identifier}`;
+  const [ipBlocked, idBlocked] = await Promise.all([
+    ipKey ? rateLimitReached(ipKey, IP_FAILURE_LIMIT.limit) : false,
+    rateLimitReached(idKey, IDENTIFIER_FAILURE_LIMIT.limit),
   ]);
-  if ((ipCheck && !ipCheck.allowed) || !idCheck.allowed) {
-    return { ok: false, reason: "rate_limited" };
-  }
+  if (ipBlocked || idBlocked) return { ok: false, reason: "rate_limited" };
+  const recordFailure = () =>
+    Promise.all([
+      ipKey ? rateLimit(ipKey, IP_FAILURE_LIMIT.limit, IP_FAILURE_LIMIT.windowSeconds) : null,
+      rateLimit(idKey, IDENTIFIER_FAILURE_LIMIT.limit, IDENTIFIER_FAILURE_LIMIT.windowSeconds),
+    ]);
 
   const user = await findUserByIdentifier(input.identifier);
 
   if (!user) {
     await verifyPassword(await getDummyHash(), input.password);
+    await recordFailure();
     return { ok: false, reason: "invalid_credentials" };
   }
 
@@ -72,10 +81,12 @@ export async function authenticate(
 
   // Deactivated / deleted accounts get the same generic error as a wrong password.
   if (!user.isActive || user.deletedAt) {
+    await recordFailure();
     return { ok: false, reason: "invalid_credentials" };
   }
 
   if (!passwordOk) {
+    await recordFailure();
     const [maxAttempts, lockoutMinutes] = await Promise.all([
       getSetting("auth.maxFailedAttempts"),
       getSetting("auth.lockoutMinutes"),

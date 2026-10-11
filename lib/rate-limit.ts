@@ -28,3 +28,12 @@ export async function rateLimit(
     resetAt: row.resetAt,
   };
 }
+
+/** Read a counter without incrementing it (e.g. to count only failures). */
+export async function rateLimitReached(key: string, limit: number): Promise<boolean> {
+  const row = await db.rateLimitBucket.findUnique({
+    where: { key },
+    select: { count: true, resetAt: true },
+  });
+  return !!row && row.resetAt > new Date() && row.count >= limit;
+}

@@ -63,6 +63,10 @@ describe("decideRoute — anonymous", () => {
     expect(decideRoute("/", null)).toEqual({ type: "redirect", to: "/login" });
   });
 
+  it("leaves the health check public", () => {
+    expect(decideRoute("/api/health", null)).toEqual({ type: "allow" });
+  });
+
   it("returns 401 for APIs", () => {
     expect(decideRoute("/api/me", null)).toMatchObject({ type: "deny", status: 401 });
   });

@@ -7,6 +7,7 @@
  */
 import "dotenv/config";
 import { db } from "@/lib/db";
+import { academicYearFor } from "@/lib/academics/calendar";
 import { hashPassword } from "@/lib/auth/password";
 import { settingDefaults } from "@/lib/settings";
 import type { CourseType, SessionType } from "@/generated/prisma/client";
@@ -108,44 +109,25 @@ async function main() {
     },
   });
 
-  // ── Academic calendar ─────────────────────────────────────────────────────
+  // ── Academic calendar (relative to today, so the current term always contains today) ──
+  const cal = academicYearFor(new Date());
   const year = await db.academicYear.create({
     data: {
-      name: "2026-27",
-      startDate: new Date("2026-07-01"),
-      endDate: new Date("2027-06-30"),
+      name: cal.name,
+      startDate: cal.startDate,
+      endDate: cal.endDate,
       isCurrent: true,
-      holidays: {
-        create: [
-          { date: new Date("2026-10-02"), name: "Gandhi Jayanti" },
-          { date: new Date("2026-10-20"), name: "Dussehra" },
-          { date: new Date("2026-11-08"), name: "Diwali" },
-          { date: new Date("2026-12-25"), name: "Christmas" },
-          { date: new Date("2027-01-26"), name: "Republic Day" },
-        ],
-      },
+      holidays: { create: cal.holidays },
     },
   });
-
-  const semester = await db.semester.create({
-    data: {
-      academicYearId: year.id,
-      name: "Odd Semester 2026-27",
-      term: "ODD",
-      startDate: new Date("2026-07-15"),
-      endDate: new Date("2026-12-15"),
-      isCurrent: true,
-    },
-  });
-  await db.semester.create({
-    data: {
-      academicYearId: year.id,
-      name: "Even Semester 2026-27",
-      term: "EVEN",
-      startDate: new Date("2027-01-05"),
-      endDate: new Date("2027-05-31"),
-    },
-  });
+  const [odd, even] = await Promise.all(
+    [cal.odd, cal.even].map((t) =>
+      db.semester.create({
+        data: { academicYearId: year.id, ...t, isCurrent: t.term === cal.currentTerm },
+      }),
+    ),
+  );
+  const semester = cal.currentTerm === "ODD" ? odd : even;
 
   // ── Structure ─────────────────────────────────────────────────────────────
   const dept = await db.department.create({

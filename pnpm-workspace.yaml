@@ -4,3 +4,9 @@ allowBuilds:
   prisma: true
   sharp: false
   unrs-resolver: false
+
+# Patched transitive versions (all CLI/build tooling, not app runtime) — see README → Security.
+overrides:
+  lodash: ">=4.17.24"
+  mysql2: ">=3.23.1"
+  deepmerge-ts: ">=8.0.0"

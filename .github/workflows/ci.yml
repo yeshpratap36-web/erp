@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, typecheck, unit tests, audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm audit --prod
+
+  face-service:
+    name: Face service tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/face
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - name: Download models (checksums verified)
+        run: |
+          mkdir -p models && cd models
+          ZOO=https://github.com/opencv/opencv_zoo/raw/main/models
+          curl -sSLO $ZOO/face_detection_yunet/face_detection_yunet_2023mar.onnx
+          curl -sSLO $ZOO/face_recognition_sface/face_recognition_sface_2021dec.onnx
+          printf '%s\n' \
+            "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4  face_detection_yunet_2023mar.onnx" \
+            "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79  face_recognition_sface_2021dec.onnx" \
+            | sha256sum -c -
+      - name: Public-domain test face (skipped tests if unavailable)
+        run: curl -sSL -o /tmp/astronaut.png https://gitlab.com/scikit-image/data/-/raw/master/astronaut.png || true
+      - run: FACE_MODEL_DIR=models FACE_TEST_IMAGE=/tmp/astronaut.png python -m pytest -q
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Environment with generated secrets
+        run: |
+          cp .env.example .env
+          sed -i "s|^AUTH_SECRET=.*|AUTH_SECRET=\"$(openssl rand -base64 32)\"|" .env
+          sed -i "s|^FACE_SERVICE_TOKEN=.*|FACE_SERVICE_TOKEN=\"$(openssl rand -hex 32)\"|" .env
+      - name: Start Postgres, MinIO and the face service
+        run: |
+          docker compose up -d --build
+          docker compose wait minio-init   # one-shot bucket creation
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8001/health && break
+            sleep 2
+          done
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      # Creates its own database, migrates, seeds, runs, and drops it afterwards.
+      - run: pnpm test:e2e
+        env:
+          CI: "true"
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

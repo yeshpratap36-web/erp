@@ -1,14 +1,24 @@
 import { execSync } from "node:child_process";
-import { TEST_DATABASE_URL } from "./env";
+import pg from "pg";
+import {
+  ADMIN_DATABASE_URL,
+  TEST_DATABASE_NAME,
+  TEST_DATABASE_URL,
+  TEST_DB_NAME_PATTERN,
+} from "./env";
 
-/**
- * Resets the dedicated e2e database (never the dev DB) and seeds it.
- * Set E2E_SKIP_DB_RESET=1 when the database was already prepared (e.g. a fresh CI database
- * prepared with `prisma migrate deploy && prisma db seed`).
- */
-export default function globalSetup() {
-  if (process.env.E2E_SKIP_DB_RESET === "1") return;
-  execSync("pnpm prisma migrate reset --force && pnpm prisma db seed", {
+/** Create this run's database, apply migrations, seed it. Never touches existing databases. */
+export default async function globalSetup() {
+  if (!TEST_DB_NAME_PATTERN.test(TEST_DATABASE_NAME))
+    throw new Error(`Unexpected test DB name ${TEST_DATABASE_NAME}`);
+  const admin = new pg.Client({ connectionString: ADMIN_DATABASE_URL });
+  await admin.connect();
+  try {
+    await admin.query(`CREATE DATABASE "${TEST_DATABASE_NAME}"`);
+  } finally {
+    await admin.end();
+  }
+  execSync("pnpm prisma migrate deploy && pnpm prisma db seed", {
     stdio: "inherit",
     env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
   });
