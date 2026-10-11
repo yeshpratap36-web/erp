@@ -54,3 +54,7 @@ next-env.d.ts
 /services/face/models/
 __pycache__/
 .pytest_cache/
+
+# Deployment
+/deploy/.env.deploy
+/.deploy-local/

@@ -53,6 +53,24 @@ jobs:
         run: curl -sSL -o /tmp/astronaut.png https://gitlab.com/scikit-image/data/-/raw/master/astronaut.png || true
       - run: FACE_MODEL_DIR=models FACE_TEST_IMAGE=/tmp/astronaut.png python -m pytest -q
 
+  image:
+    name: Production image builds and starts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t college-erp:ci .
+      - name: Face service + app start inside the image
+        run: |
+          docker network create ci
+          docker run -d --name db --network ci -e POSTGRES_USER=erp -e POSTGRES_PASSWORD=erp -e POSTGRES_DB=erp pgvector/pgvector:pg17
+          for i in $(seq 1 30); do docker exec db pg_isready -U erp -d erp && break; sleep 2; done
+          ENV="-e DATABASE_URL=postgresql://erp:erp@db:5432/erp -e AUTH_SECRET=$(openssl rand -hex 32) -e AUTH_URL=http://localhost:3000 \
+               -e S3_ENDPOINT=http://localhost:9000 -e S3_REGION=us-east-1 -e S3_BUCKET=ci -e S3_ACCESS_KEY_ID=ci -e S3_SECRET_ACCESS_KEY=ci"
+          docker run --rm --network ci $ENV college-erp:ci migrate
+          docker run -d --name app --network ci -p 3000:3000 $ENV college-erp:ci
+          for i in $(seq 1 60); do curl -sf localhost:3000/api/health | grep -q '"faceService":true' && break; sleep 2; done
+          curl -s localhost:3000/api/health | tee /dev/stderr | grep -q '"ok":true'
+
   e2e:
     name: End-to-end (Playwright)
     runs-on: ubuntu-latest

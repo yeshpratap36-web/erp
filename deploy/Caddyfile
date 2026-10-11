@@ -1,0 +1,14 @@
+{
+	email {$ACME_EMAIL}
+}
+
+# Automatic HTTPS (Let's Encrypt) for the configured domain. For DOMAIN=localhost Caddy uses
+# its own local CA (testing). Caddy sets X-Forwarded-For from the real client address and
+# ignores any value the client sends, which the app relies on for login rate limiting.
+{$DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 25MB
+	}
+	reverse_proxy app:3000
+}

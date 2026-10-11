@@ -20,8 +20,26 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
+/** Placeholder values used only while `next build` collects page data (no secrets exist then). */
+const BUILD_PLACEHOLDERS = {
+  DATABASE_URL: "postgresql://build:build@localhost:5432/build",
+  AUTH_SECRET: "build-time-placeholder-not-a-real-secret-0000",
+  S3_ENDPOINT: "http://localhost:9000",
+  S3_REGION: "us-east-1",
+  S3_ACCESS_KEY_ID: "build",
+  S3_SECRET_ACCESS_KEY: "build",
+  S3_BUCKET: "build",
+  FACE_SERVICE_URL: "http://127.0.0.1:8001",
+  FACE_SERVICE_TOKEN: "build-time-placeholder-not-a-real-token-0000",
+};
+
 function parseEnv(): Env {
-  const result = envSchema.safeParse(process.env);
+  // `next build` imports server modules to collect page data; nothing connects at that point.
+  // Real values are still required (and validated) whenever the server actually runs.
+  const isBuild = process.env.NEXT_PHASE === "phase-production-build";
+  const result = envSchema.safeParse(
+    isBuild ? { ...BUILD_PLACEHOLDERS, ...process.env } : process.env,
+  );
   if (!result.success) {
     console.error("Invalid environment variables:\n" + z.prettifyError(result.error));
     throw new Error("Invalid environment variables");

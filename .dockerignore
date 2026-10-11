@@ -1,0 +1,22 @@
+# Secrets and local state never go into the image.
+.env
+.env.*
+!.env.example
+deploy/.env.deploy
+.git
+node_modules
+.next
+generated
+coverage
+playwright-report
+test-results
+tests
+services/face/.venv
+services/face/models
+services/face/tests
+**/__pycache__
+**/.pytest_cache
+.github
+*.log
+playwright.config.ts
+vitest.config.ts

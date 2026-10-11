@@ -129,36 +129,28 @@ scale) are edited by admins at **Admin → Settings** and audit-logged.
 
 ## Deployment
 
-The app is a standard Node server plus three backing services.
+**Single server (recommended):** one Docker image (app + internal face service) behind Caddy
+(automatic HTTPS) with Postgres + pgvector on the same server, an S3/R2 bucket for photos and
+nightly backups. One command deploys and updates:
 
-1. **PostgreSQL 15+ with pgvector** — managed options that support `vector`: AWS RDS/Aurora,
-   Google Cloud SQL, Azure Flexible Server, Neon, Supabase. The first migration runs
-   `CREATE EXTENSION IF NOT EXISTS vector` (needs a role allowed to create it).
-2. **Object storage** — Cloudflare R2 (or S3). Create one **private** bucket; no public access,
-   no CORS needed (the browser never talks to it). Optional lifecycle rule to expire
-   `attendance/` objects after 7 days as a backstop (they're deleted on confirmation).
-3. **Face service** — build `services/face/Dockerfile` (it downloads the models and verifies their
-   checksums). Run it on a **private network only** (e.g. a private service on Fly.io/Railway/
-   ECS/Cloud Run with internal ingress), with `FACE_SERVICE_TOKEN` set. ~1 GB RAM is plenty;
-   scale with `--workers`. It stores nothing.
-4. **The app**
-   ```bash
-   pnpm install --frozen-lockfile
-   pnpm build
-   pnpm db:deploy                      # apply migrations (run once per release)
-   ADMIN_LOGIN_ID=principal ADMIN_EMAIL=principal@college.edu ADMIN_NAME="Principal" pnpm admin:bootstrap
-   pnpm start                          # behind an HTTPS reverse proxy / load balancer
-   ```
-   - Run behind HTTPS. The proxy must set `X-Forwarded-For` (used for login rate limiting).
-   - Health check: `GET /api/health` → `{ ok, database, faceService }` (503 if the DB is down).
-   - **Never run `db:seed` or `db:demo` in production** (`db:demo` refuses to).
-   - Vercel works too: face photo processing uses `after()` within the route's `maxDuration`
-     (60 s); the face service must be reachable from Vercel (e.g. a token-protected endpoint
-     behind a private link or IP allowlist).
-5. **Backups & retention** — daily `pg_dump` (or managed PITR) with tested restores; the audit
-   log is append-only and should be retained per institutional policy. Face templates are
-   deleted when an admin deletes a student's biometric data; deactivating an account does
-   not delete them — include that in your offboarding process.
+```bash
+cp deploy/env.deploy.example deploy/.env.deploy      # fill in domain, S3, first admin
+deploy/deploy.sh --host ubuntu@<server-ip> --key ~/.ssh/key.pem
+```
+
+See **[deploy/README.md](deploy/README.md)** for the AWS walkthrough (EC2/Lightsail, security
+group, DNS, S3 + least-privilege IAM), updates and automatic rollback, backups and restore,
+and troubleshooting.
+
+**Other platforms:** the image runs anywhere containers do (ECS, App Runner, Kubernetes,
+Fly.io): `docker run … college-erp migrate`, `… bootstrap`, then the default `serve`. It needs
+an external Postgres with pgvector and S3-compatible storage — details in deploy/README.md.
+
+- Run behind HTTPS with a proxy that sets `X-Forwarded-For` from the real client (Caddy does).
+- Health check: `GET /api/health` → `{ ok, database, faceService }` (503 if the DB is down).
+- **Never run `db:seed` or `db:demo` in production** (`db:demo` refuses to).
+- Deactivating an account does not delete face templates — use **Delete biometric data** in
+  your offboarding process.
 
 ## Security & privacy
 
